@@ -1,7 +1,5 @@
 # Denoising Variational Lossy Autoencoder
-<!---
-Code to accompany [Unsupervised Structured Noise Removal with Variational Lossy Autoencoder]() TODO: update with Arxiv link<br>
--->
+Code to accompany [Unsupervised Structured Noise Removal with Variational Lossy Autoencoder](https://arxiv.org/abs/2310.07887).<br>
 <sup>1</sup>Benjamin Salmon and <sup>2</sup>Alexander Krull<br>
 <sup>1, 2</sup>University of Birmingham<br>
 <sup>1</sup>brs209@student.bham.ac.uk, <sup>2</sup>a.f.f.krull@bham.ac.uk<br>
@@ -20,13 +18,17 @@ As a consequence, our VAE's encoder learns to encode only underlying clean signa
 We also propose an additional decoder for mapping the encoder's latent variables back into image space, thereby sampling denoised images.
 Experimental results demonstrate that our approach surpasses existing methods for self- and unsupervised image denoising while being robust with respect to the size of the autoregressive receptive field.
 
-<!---
 ### BibTeX
 ```
-
-``` TODO: update with Arxiv citation<br>
--->
-
+@misc{salmon2023unsupervised,
+      title={Unsupervised Structured Noise Removal with Variational Lossy Autoencoder}, 
+      author={Benjamin Salmon and Alexander Krull},
+      year={2023},
+      eprint={2310.07887},
+      archivePrefix={arXiv},
+      primaryClass={eess.IV}
+}
+```
 
 ### Dependencies
 We recommend installing the dependencies in a conda environment. If you haven't already, install miniconda on your system by following this [link](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html).<br>
