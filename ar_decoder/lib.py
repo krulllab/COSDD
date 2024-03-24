@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical, Normal, MixtureSameFamily
 
 
 class Rotate90(nn.Module):
@@ -14,8 +14,6 @@ class Rotate90(nn.Module):
         )
 
 
-def sample_mixture_model(weights, loc, scale):
-    mixture_samples = Normal(loc, scale).rsample()
-    component_idx = Categorical(weights).sample()
-
-    return torch.gather(mixture_samples, dim=-1, index=component_idx.unsqueeze(dim=-1))
+def sample_mixture_model(logweights, loc, scale):
+    px = MixtureSameFamily(Categorical(logits=logweights), Normal(loc, scale))
+    return px.sample()

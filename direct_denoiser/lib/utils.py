@@ -1,5 +1,8 @@
 import torch
 from torch import nn
+import matplotlib.pyplot as plt
+from torchvision import transforms
+import io
 
 
 def crop_img_tensor(x, size) -> torch.Tensor:
@@ -60,3 +63,18 @@ def pad_img_tensor(x, size) -> torch.Tensor:
     """
 
     return _pad_crop_img(x, size, 'pad')
+
+
+def plot_to_image(figure):
+    """Converts the matplotlib plot specified by 'figure' to a PNG image and
+    returns it. The supplied figure is closed and inaccessible after this call."""
+    # Save the plot to a PNG in memory.
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    # Closing the figure prevents it from being displayed directly inside
+    # the notebook.
+    plt.close(figure)
+    buf.seek(0)
+    # Convert PNG buffer to PyTorch tensor
+    image = transforms.ToTensor()(plt.imread(buf))
+    return image

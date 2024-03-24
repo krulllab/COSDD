@@ -1,76 +1,56 @@
 import numpy as np
-import torch
 from torch import nn
+from torch.nn import functional as F
 from ..lib.utils import crop_img_tensor, pad_img_tensor
-from .lvae_layers import (
+from .unet_layers import (
     TopDownLayer,
     BottomUpLayer,
-    TopDownDeterministicResBlock,
-    BottomUpDeterministicResBlock,
+    TopDownResBlock,
+    BottomUpResBlock,
 )
 
 
-class LadderVAE(nn.Module):
-    """
-    Ladder Variational Autoencoder (LVAE) model.
-
+class UNet(nn.Module):
+    """UNet model. Deterministic version of LVAE.
     Args:
-        colour_channels (int): Number of input image channels.
-        img_shape (tuple): Shape of the input image (height, width).
-        s_code_channels (int): Number of channels in the returned latent code.
-        z_dims (list, optional): List of dimensions for the latent variables z.
-            If not provided, default value of [32] * 12 will be used.
-        blocks_per_layer (int, optional): Number of residual blocks per layer.
-            Default: 1.
-        n_filters (int, optional): Number of filters in the convolutional layers.
-            Default: 64.
-        learn_top_prior (bool, optional): Whether to learn the top prior.
-            Default: True.
-        res_block_type (str, optional): Type of residual block. Default: "bacbac".
-        merge_type (str, optional): Type of merge operation in the top-down layer.
-            Default: "residual".
-        stochastic_skip (bool, optional): Whether to use stochastic skip connections.
-            Default: True.
-        gated (bool, optional): Whether to use gated activations in the layers.
-            Default: True.
-        batchnorm (bool, optional): Whether to use batch normalization in the layers.
-            Default: True.
-        downsampling (list, optional): List of downsampling steps per layer.
-            If not provided, default value of [0] * n_layers will be used.
-        mode_pred (bool, optional): Whether to predict the mode of the distribution.
-            Default: False.
+        colour_channels (int): Number of colour channels in the input image.
+        blocks_per_layer (int): Number of residual blocks per layer.
+        n_filters (int): Number of filters in the convolutional layers.
+        n_layers (int): Number of layers in the UNet.
+        res_block_type (str): Type of residual block. Default: 'bacbac'.
+        merge_type (str): Type of merge layer. Default: 'residual'.
+        td_skip (bool): Whether to use skip connections in the top-down pass.
+        gated (bool): Whether to use gated activations in the residual blocks.
+        batchnorm (bool): Whether to use batch normalization in the residual blocks.
+        downsampling (list): Number of downsampling steps per layer.
+        loss_fn (str): Loss function to use. Default: 'L2'.
     """
-class LadderVAE(nn.Module):
-
 
     def __init__(
         self,
         colour_channels,
-        img_shape,
-        s_code_channels,
-        z_dims=None,
         blocks_per_layer=1,
         n_filters=64,
-        learn_top_prior=True,
+        n_layers=14,
         res_block_type="bacbac",
         merge_type="residual",
-        stochastic_skip=True,
+        td_skip=True,
         gated=True,
         batchnorm=True,
         downsampling=None,
-        mode_pred=False,
+        loss_fn="L2",
     ):
-        if z_dims is None:
-            z_dims = [32] * 12
         super().__init__()
-        self.img_shape = tuple(img_shape)
-        self.z_dims = z_dims
-        self.n_layers = len(self.z_dims)
+        self.n_layers = n_layers
         self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
-        self.stochastic_skip = stochastic_skip
+        self.td_skip = td_skip
         self.gated = gated
-        self.mode_pred = mode_pred
+        self.loss_fn = loss_fn
+
+        # We need to optimize the s_decoder separately
+        # from the main VAE and noise_model
+        self.automatic_optimization = False
 
         # Number of downsampling steps per layer
         if downsampling is None:
@@ -90,7 +70,7 @@ class LadderVAE(nn.Module):
                       padding=2,
                       padding_mode="replicate"),
             nn.Mish(),
-            BottomUpDeterministicResBlock(
+            BottomUpResBlock(
                 c_in=n_filters,
                 c_out=n_filters,
                 batchnorm=batchnorm,
@@ -132,16 +112,13 @@ class LadderVAE(nn.Module):
             # merge layer is not used, and z is sampled directly from p_params.
             self.top_down_layers.append(
                 TopDownLayer(
-                    z_dim=z_dims[i],
                     n_res_blocks=blocks_per_layer,
                     n_filters=n_filters,
                     is_top_layer=is_top,
                     downsampling_steps=downsampling[i],
                     merge_type=merge_type,
                     batchnorm=batchnorm,
-                    stochastic_skip=stochastic_skip,
-                    learn_top_prior=learn_top_prior,
-                    top_prior_param_shape=self.get_top_prior_param_shape(),
+                    skip=td_skip,
                     res_block_type=res_block_type,
                     gated=gated,
                 ))
@@ -150,10 +127,10 @@ class LadderVAE(nn.Module):
         modules = list()
         for i in range(blocks_per_layer):
             modules.append(
-                TopDownDeterministicResBlock(
+                TopDownResBlock(
                     c_in=n_filters,
                     c_out=n_filters if i <
-                    (blocks_per_layer - 1) else s_code_channels,
+                    (blocks_per_layer - 1) else colour_channels,
                     batchnorm=batchnorm,
                     res_block_type=res_block_type,
                     gated=gated,
@@ -170,23 +147,11 @@ class LadderVAE(nn.Module):
         bu_values = self.bottomup_pass(x_pad)
 
         # Top-down inference/generation
-        s_code, kl = self.topdown_pass(bu_values)
-
-        if not self.mode_pred:
-            # Calculate KL divergence
-            kl_sums = [torch.sum(layer) for layer in kl]
-            kl_loss = sum(kl_sums) / float(
-                x.shape[0] * x.shape[1] * x.shape[2] * x.shape[3])
-        else:
-            kl_loss = None
+        output = self.topdown_pass(bu_values)
 
         # Restore original image size
-        s_code = crop_img_tensor(s_code, img_size)
+        output = crop_img_tensor(output, img_size)
 
-        output = {
-            "kl_loss": kl_loss,
-            "s_code": s_code,
-        }
         return output
 
     def bottomup_pass(self, x):
@@ -204,33 +169,8 @@ class LadderVAE(nn.Module):
 
     def topdown_pass(
         self,
-        bu_values=None,
-        n_img_prior=None,
-        mode_layers=None,
-        constant_layers=None,
-        forced_latent=None,
+        bu_values,
     ):
-        # Default: no layer is sampled from the distribution's mode
-        if mode_layers is None:
-            mode_layers = []
-        if constant_layers is None:
-            constant_layers = []
-
-        # If the bottom-up inference values are not given, don't do
-        # inference, sample from prior instead
-        inference_mode = bu_values is not None
-
-        # Check consistency of arguments
-        if inference_mode != (n_img_prior is None):
-            msg = ("Number of images for top-down generation has to be given "
-                   "if and only if we're not doing inference")
-            raise RuntimeError(msg)
-
-        # KL divergence of each layer
-        kl = [None] * self.n_layers
-
-        if forced_latent is None:
-            forced_latent = [None] * self.n_layers
 
         # Top-down inference/generation loop
         out = None
@@ -241,40 +181,20 @@ class LadderVAE(nn.Module):
             except TypeError:
                 bu_value = None
 
-            # Whether the current layer should be sampled from the mode
-            use_mode = i in mode_layers
-            constant_out = i in constant_layers
-
             # Input for skip connection
             skip_input = out  # TODO or out_pre_residual? or both?
 
             # Full top-down layer, including sampling and deterministic part
-            out, kl_elementwise = self.top_down_layers[i](
+            out = self.top_down_layers[i](
                 out,
                 skip_connection_input=skip_input,
-                inference_mode=inference_mode,
                 bu_value=bu_value,
-                n_img_prior=n_img_prior,
-                use_mode=use_mode,
-                force_constant_output=constant_out,
-                forced_latent=forced_latent[i],
-                mode_pred=self.mode_pred,
             )
-            kl[i] = kl_elementwise
 
         # Final top-down layer
         out = self.final_top_down(out)
 
-        return out, kl
-
-    @torch.no_grad()
-    def sample_from_prior(self, n_images):
-        # Sample from p(z_L) and do top-down generative path
-        # Spatial size of image is given by self.img_shape
-        out, _ = self.topdown_pass(n_img_prior=n_images)
-        generated_s_code = crop_img_tensor(out, self.img_shape)
-
-        return generated_s_code
+        return out
 
     def pad_input(self, x):
         """
@@ -310,12 +230,8 @@ class LadderVAE(nn.Module):
 
         return padded_size
 
-    def get_top_prior_param_shape(self, n_imgs=1):
-        # TODO num channels depends on random variable we're using
-        dwnsc = self.overall_downscale_factor
-        sz = self.get_padded_size(self.img_shape)
-        h = sz[0] // dwnsc
-        w = sz[1] // dwnsc
-        c = self.z_dims[-1] * 2  # mu and log-sigma
-        top_layer_shape = (n_imgs, c, h, w)
-        return top_layer_shape
+    def loss(self, x, y):
+        if self.loss_fn == "L1":
+            return F.l1_loss(x, y, reduction="none")
+        elif self.loss_fn == "L2":
+            return F.mse_loss(x, y, reduction="none")
