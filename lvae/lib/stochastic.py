@@ -4,7 +4,7 @@ from torch.distributions import kl_divergence
 from torch.distributions.normal import Normal
 
 
-class NormalStochasticBlock2d(nn.Module):
+class NormalStochasticBlock3d(nn.Module):
     """
     Transform input parameters to q(z) with a convolution, optionally do the
     same for p(z), then sample z ~ q(z) and return conv(z).
@@ -22,17 +22,17 @@ class NormalStochasticBlock2d(nn.Module):
         self.c_vars = c_vars
 
         if transform_p_params:
-            self.conv_in_p = nn.Conv2d(c_in,
+            self.conv_in_p = nn.Conv3d(c_in,
                                        2 * c_vars,
                                        kernel,
                                        padding=pad,
                                        padding_mode='replicate')
-        self.conv_in_q = nn.Conv2d(c_in,
+        self.conv_in_q = nn.Conv3d(c_in,
                                    2 * c_vars,
                                    kernel,
                                    padding=pad,
                                    padding_mode='replicate')
-        self.conv_out = nn.Conv2d(c_vars,
+        self.conv_out = nn.Conv3d(c_vars,
                                   c_out,
                                   kernel,
                                   padding=pad,

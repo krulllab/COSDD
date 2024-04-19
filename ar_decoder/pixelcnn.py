@@ -29,21 +29,16 @@ class PixelCNN(nn.Module):
         colour_channels,
         s_code_channels,
         kernel_size,
-        RF_shape="horizontal",
+        noise_direction="x",
         n_filters=64,
         n_layers=4,
         n_gaussians=5,
     ):
         super().__init__()
-        assert RF_shape in ("horizontal", "vertical")
+        assert noise_direction in ("x", "y", "z")
         self.n_gaussians = n_gaussians
         self.colour_channels = colour_channels
-        self.RF_shape = RF_shape
-
-        if RF_shape == "horizontal":
-            rotate90 = False
-        elif RF_shape == "vertical":
-            rotate90 = True
+        self.noise_direction = noise_direction
 
         self.layers = Layers(
             colour_channels=colour_channels,
@@ -51,11 +46,11 @@ class PixelCNN(nn.Module):
             kernel_size=kernel_size,
             n_filters=n_filters,
             n_layers=n_layers,
-            rotate90=rotate90,
+            direction=noise_direction,
         )
 
         c_out = n_gaussians * colour_channels * 3
-        self.out_conv = nn.Conv2d(
+        self.out_conv = nn.Conv3d(
             in_channels=n_filters, out_channels=c_out, kernel_size=1
         )
 
@@ -73,10 +68,9 @@ class PixelCNN(nn.Module):
 
     def loglikelihood(self, x, params):
         logweights, loc, scale = self.extract_params(params)
-        
+
         p = MixtureSameFamily(
-            Categorical(logits=logweights),
-            Normal(loc=loc, scale=scale)
+            Categorical(logits=logweights), Normal(loc=loc, scale=scale)
         )
 
         return p.log_prob(x)
@@ -84,19 +78,28 @@ class PixelCNN(nn.Module):
     @torch.no_grad()
     def sample(self, s_code):
         image = torch.zeros(
-            s_code.shape[0], self.colour_channels, s_code.shape[2], s_code.shape[3]
+            s_code.shape[0], self.colour_channels, *s_code.shape[2:]
         )
         image = image.to(s_code.get_device())
 
-        if self.RF_shape == "horizontal":
+        if self.noise_direction == "x":
             for i in tqdm(range(s_code.shape[-1]), bar_format="{l_bar}{bar}|"):
                 params = self(image[..., : i + 1], s_code[..., : i + 1])
                 logweights, loc, scale = self.extract_params(params[..., i : i + 1])
                 image[..., i : i + 1] = sample_mixture_model(logweights, loc, scale)
-        else:
+        elif self.noise_direction == "y":
             for i in tqdm(range(s_code.shape[-2]), bar_format="{l_bar}{bar}|"):
                 params = self(image[..., : i + 1, :], s_code[..., : i + 1, :])
                 logweights, loc, scale = self.extract_params(params[..., i : i + 1, :])
                 image[..., i : i + 1, :] = sample_mixture_model(logweights, loc, scale)
-        
+        elif self.noise_direction == "z":
+            for i in tqdm(range(s_code.shape[-3]), bar_format="{l_bar}{bar}|"):
+                params = self(image[..., : i + 1, :, :], s_code[..., : i + 1, :, :])
+                logweights, loc, scale = self.extract_params(
+                    params[..., i : i + 1, :, :]
+                )
+                image[..., i : i + 1, :, :] = sample_mixture_model(
+                    logweights, loc, scale
+                )
+
         return image

@@ -20,7 +20,7 @@ class SDecoder(nn.Module):
             raise ValueError("n_layers must be greater than 2")
 
         modules = [
-            nn.Conv2d(
+            nn.Conv3d(
                 s_code_channels,
                 n_filters,
                 kernel_size,
@@ -32,7 +32,7 @@ class SDecoder(nn.Module):
         for _ in range(n_layers - 2):
             modules.extend(
                 [
-                    nn.Conv2d(
+                    nn.Conv3d(
                         n_filters,
                         n_filters,
                         kernel_size,
@@ -43,7 +43,7 @@ class SDecoder(nn.Module):
                 ]
             )
         modules.append(
-            nn.Conv2d(
+            nn.Conv3d(
                 n_filters,
                 colour_channels,
                 kernel_size,

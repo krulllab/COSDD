@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from ..lib.nn import ResidualBlock
-from ..lib.stochastic import NormalStochasticBlock2d
+from ..lib.stochastic import NormalStochasticBlock3d
 
 
 class TopDownLayer(nn.Module):
@@ -28,12 +28,11 @@ class TopDownLayer(nn.Module):
 
     def __init__(self,
                  z_dim,
-                 n_res_blocks,
                  n_filters,
                  is_top_layer=False,
-                 downsampling_steps=None,
+                 upsampling=False,
                  merge_type=None,
-                 batchnorm=True,
+                 kernel_size=3,
                  stochastic_skip=False,
                  res_block_type=None,
                  gated=None,
@@ -52,30 +51,18 @@ class TopDownLayer(nn.Module):
                 torch.zeros(top_prior_param_shape),
                 requires_grad=learn_top_prior)
 
-        # Downsampling steps left to undo in this layer
-        dws_left = downsampling_steps
-
-        # Define deterministic top-down block: sequence of deterministic
-        # residual blocks with downsampling when needed.
-        block_list = []
-        for _ in range(n_res_blocks):
-            do_resample = False
-            if dws_left > 0:
-                do_resample = True
-                dws_left -= 1
-            block_list.append(
-                TopDownDeterministicResBlock(
+        # Define deterministic top-down residual block
+        self.res_block = TopDownDeterministicResBlock(
                     n_filters,
                     n_filters,
-                    upsample=do_resample,
-                    batchnorm=batchnorm,
+                    upsampling=upsampling,
+                    res_block_kernel=kernel_size,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.deterministic_block = nn.Sequential(*block_list)
+                )
 
-        # Define stochastic block with 2d convolutions
-        self.stochastic = NormalStochasticBlock2d(
+        # Define stochastic block with 3d convolutions
+        self.stochastic = NormalStochasticBlock3d(
             c_in=n_filters,
             c_vars=z_dim,
             c_out=n_filters,
@@ -88,7 +75,6 @@ class TopDownLayer(nn.Module):
             self.merge = MergeLayer(
                 channels=n_filters,
                 merge_type=merge_type,
-                batchnorm=batchnorm,
                 res_block_type=res_block_type,
             )
 
@@ -97,7 +83,6 @@ class TopDownLayer(nn.Module):
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
                     merge_type='residual',
-                    batchnorm=batchnorm,
                     res_block_type=res_block_type,
                 )
 
@@ -123,7 +108,7 @@ class TopDownLayer(nn.Module):
 
             # Sample specific number of images by expanding the prior
             if n_img_prior is not None:
-                p_params = p_params.expand(n_img_prior, -1, -1, -1)
+                p_params = p_params.expand(n_img_prior, -1, -1, -1, -1)
 
         # Else the input from the layer above is the prior parameters
         else:
@@ -156,46 +141,36 @@ class TopDownLayer(nn.Module):
             z = self.skip_connection_merger(z, skip_connection_input)
 
         # Last top-down block (sequence of residual blocks)
-        z = self.deterministic_block(z)
+        z = self.res_block(z)
 
         return z, kl_elementwise
 
 
 class BottomUpLayer(nn.Module):
     """
-    Bottom-up deterministic layer for inference, roughly the same as the
-    small deterministic Resnet in top-down layers. Consists of a sequence of
-    bottom-up deterministic residual blocks with downsampling.
+    Bottom-up deterministic layer for inference. Essentially a ResBlock
+    with optional per-dimension downsampling.
     """
 
     def __init__(self,
-                 n_res_blocks,
                  n_filters,
-                 downsampling_steps=0,
-                 batchnorm=True,
+                 downsampling=False,
+                 kernel_size=3,
                  res_block_type=None,
                  gated=None):
         super().__init__()
 
-        bu_blocks = []
-        for _ in range(n_res_blocks):
-            do_resample = False
-            if downsampling_steps > 0:
-                do_resample = True
-                downsampling_steps -= 1
-            bu_blocks.append(
-                BottomUpDeterministicResBlock(
+        self.res_block = BottomUpDeterministicResBlock(
                     c_in=n_filters,
                     c_out=n_filters,
-                    downsample=do_resample,
-                    batchnorm=batchnorm,
+                    downsampling=downsampling,
+                    res_block_kernel=kernel_size,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.net = nn.Sequential(*bu_blocks)
+                )
 
     def forward(self, x):
-        return self.net(x)
+        return self.res_block(x)
 
 
 class ResBlockWithResampling(nn.Module):
@@ -204,17 +179,15 @@ class ResBlockWithResampling(nn.Module):
 
     The mode can be top-down or bottom-up, and the block does up- and
     down-sampling by a factor of 2, respectively. Resampling is performed at
-    the beginning of the block, through average pooling.
+    the beginning of the block, through strided convolution.
 
     The number of channels is adjusted at the beginning and end of the block,
     through convolutional layers with kernel size 1. The number of internal
     channels is by default the same as the number of output channels, but
     min_inner_channels overrides this behaviour.
 
-    Other parameters: kernel size, nonlinearity, and groups of the internal
-    residual block; whether batch normalization and dropout are performed;
-    whether the residual path has a gate layer at the end. There are two
-    residual block structures to choose from.
+    Other parameters: kernel size, and groups of the internal
+    residual block; whether the residual path has a gate layer at the end. 
     """
 
     def __init__(self,
@@ -224,7 +197,6 @@ class ResBlockWithResampling(nn.Module):
                  resample=False,
                  res_block_kernel=None,
                  groups=1,
-                 batchnorm=True,
                  res_block_type=None,
                  min_inner_channels=None,
                  gated=None):
@@ -232,40 +204,44 @@ class ResBlockWithResampling(nn.Module):
         assert mode in ['top-down', 'bottom-up']
         if min_inner_channels is None:
             min_inner_channels = 0
+        if isinstance(resample, bool):
+            resample = [resample] * 3
+        else:
+            assert len(resample) == 3
         inner_filters = max(c_out, min_inner_channels)
 
         # Define first conv layer to change channels and/or up/downsample
         if resample:
             if mode == 'bottom-up':  # downsample
-                self.pre_conv = nn.Conv2d(c_in,
+                stride = tuple([int(x) + 1 for x in resample])
+                self.pre_conv = nn.Conv3d(c_in,
                                           inner_filters,
                                           kernel_size=3,
-                                          stride=2,
+                                          stride=stride,
                                           padding=1,
                                           padding_mode='replicate',
                                           groups=groups)
             elif mode == 'top-down':  # upsample
+                scale_factor = tuple([int(x) + 1 for x in resample])
                 self.pre_conv = nn.Sequential(
-                    nn.Upsample(scale_factor=2, mode='nearest'),
-                    nn.Conv2d(c_in, inner_filters, 1, groups=groups))
+                    nn.Upsample(scale_factor=scale_factor, mode='trilinear'),
+                    nn.Conv3d(c_in, inner_filters, 1, groups=groups))
         elif c_in != inner_filters:
-            self.pre_conv = nn.Conv2d(c_in, inner_filters, 1, groups=groups)
+            self.pre_conv = nn.Conv3d(c_in, inner_filters, 1, groups=groups)
         else:
             self.pre_conv = None
 
         # Residual block
         self.res = ResidualBlock(
             channels=inner_filters,
-            kernel=res_block_kernel,
-            groups=groups,
-            batchnorm=batchnorm,
+            kernel_size=res_block_kernel,
             gated=gated,
             block_type=res_block_type,
         )
 
         # Define last conv layer to get correct num output channels
         if inner_filters != c_out:
-            self.post_conv = nn.Conv2d(inner_filters, c_out, 1, groups=groups)
+            self.post_conv = nn.Conv3d(inner_filters, c_out, 1, groups=groups)
         else:
             self.post_conv = None
 
@@ -280,15 +256,15 @@ class ResBlockWithResampling(nn.Module):
 
 class TopDownDeterministicResBlock(ResBlockWithResampling):
 
-    def __init__(self, *args, upsample=False, **kwargs):
-        kwargs['resample'] = upsample
+    def __init__(self, *args, upsampling=False, **kwargs):
+        kwargs['resample'] = upsampling
         super().__init__('top-down', *args, **kwargs)
 
 
 class BottomUpDeterministicResBlock(ResBlockWithResampling):
 
-    def __init__(self, *args, downsample=False, **kwargs):
-        kwargs['resample'] = downsample
+    def __init__(self, *args, downsampling=False, **kwargs):
+        kwargs['resample'] = downsampling
         super().__init__('bottom-up', *args, **kwargs)
 
 
@@ -301,29 +277,27 @@ class MergeLayer(nn.Module):
     def __init__(self,
                  channels,
                  merge_type,
-                 batchnorm=True,
+                 kernel_size=3,
                  res_block_type=None):
         super().__init__()
-        try:
-            iter(channels)
-        except TypeError:  # it is not iterable
+        if isinstance(channels, int):
             channels = [channels] * 3
-        else:  # it is iterable
-            if len(channels) == 1:
-                channels = [channels[0]] * 3
         assert len(channels) == 3
 
         if merge_type == 'linear':
-            self.layer = nn.Conv2d(channels[0] + channels[1], channels[2], 1)
+            self.layer = nn.Conv3d(channels[0] + channels[1], channels[2], 1)
         elif merge_type == 'residual':
             self.layer = nn.Sequential(
-                nn.Conv2d(channels[0] + channels[1], channels[2], 1, padding=0),
+                nn.Conv3d(channels[0] + channels[1], channels[2], 1, padding=0),
                 ResidualBlock(channels[2],
-                              batchnorm=batchnorm,
-                              block_type=res_block_type,
-                              gated=True),
+                              gated=True,
+                              kernel_size=kernel_size,
+                              block_type=res_block_type),
             )
 
     def forward(self, x, y):
+        if x.shape[2:] != y.shape[2:]:
+            raise ValueError(f"Spatial dimensions do not match. x: {x.shape}, y: {y.shape}")
+
         x = torch.cat((x, y), dim=1)
         return self.layer(x)

@@ -14,57 +14,60 @@ class UNet(nn.Module):
     """UNet model. Deterministic version of LVAE.
     Args:
         colour_channels (int): Number of colour channels in the input image.
-        blocks_per_layer (int): Number of residual blocks per layer.
         n_filters (int): Number of filters in the convolutional layers.
         n_layers (int): Number of layers in the UNet.
         res_block_type (str): Type of residual block. Default: 'bacbac'.
         merge_type (str): Type of merge layer. Default: 'residual'.
         td_skip (bool): Whether to use skip connections in the top-down pass.
         gated (bool): Whether to use gated activations in the residual blocks.
-        batchnorm (bool): Whether to use batch normalization in the residual blocks.
-        downsampling (list): Number of downsampling steps per layer.
+        downsampling (list(list(bool)), optional): List of bool for downsampling per 
+            dimension per layer. If not provided, default value of 
+            [[False, False, False]] * n_layers will be used.
         loss_fn (str): Loss function to use. Default: 'L2'.
     """
 
     def __init__(
         self,
         colour_channels,
-        blocks_per_layer=1,
         n_filters=64,
         n_layers=14,
         res_block_type="bacbac",
         merge_type="residual",
         td_skip=True,
         gated=True,
-        batchnorm=True,
         downsampling=None,
         loss_fn="L2",
     ):
         super().__init__()
         self.n_layers = n_layers
-        self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
         self.td_skip = td_skip
         self.gated = gated
         self.loss_fn = loss_fn
 
-        # We need to optimize the s_decoder separately
-        # from the main VAE and noise_model
-        self.automatic_optimization = False
-
-        # Number of downsampling steps per layer
+        # Downsampling parameter should be a list with one boolean per dimension
         if downsampling is None:
-            downsampling = [0] * self.n_layers
+            downsampling = [[False, False, False]] * self.n_layers
+        elif isinstance(downsampling, bool):
+            downsampling = [[downsampling] * 3] * self.n_layers
+        elif all(isinstance(d, bool) for d in downsampling):
+            downsampling = [[d] * 3 for d in downsampling]
 
-        # Downsample by a factor of 2 at each downsampling operation
-        self.overall_downscale_factor = np.power(2, sum(downsampling))
+        # Count overall downscale factor per dimension
+        self.overall_downscale_factor_D = np.power(2, sum(d[0] for d in downsampling))
+        self.overall_downscale_factor_H = np.power(2, sum(d[1] for d in downsampling))
+        self.overall_downscale_factor_W = np.power(2, sum(d[2] for d in downsampling))
+        self.overall_downscale_factor = (
+            self.overall_downscale_factor_D,
+            self.overall_downscale_factor_H,
+            self.overall_downscale_factor_W,
+        )
 
-        assert max(downsampling) <= self.blocks_per_layer
         assert len(downsampling) == self.n_layers
 
         # First bottom-up layer: change num channels
         self.first_bottom_up = nn.Sequential(
-            nn.Conv2d(colour_channels,
+            nn.Conv3d(colour_channels,
                       n_filters,
                       5,
                       padding=2,
@@ -73,7 +76,6 @@ class UNet(nn.Module):
             BottomUpResBlock(
                 c_in=n_filters,
                 c_out=n_filters,
-                batchnorm=batchnorm,
                 res_block_type=res_block_type,
             ),
         )
@@ -91,10 +93,8 @@ class UNet(nn.Module):
             # possibly with downsampling between them.
             self.bottom_up_layers.append(
                 BottomUpLayer(
-                    n_res_blocks=self.blocks_per_layer,
                     n_filters=n_filters,
-                    downsampling_steps=downsampling[i],
-                    batchnorm=batchnorm,
+                    downsampling=downsampling[i],
                     res_block_type=res_block_type,
                     gated=gated,
                 ))
@@ -112,30 +112,22 @@ class UNet(nn.Module):
             # merge layer is not used, and z is sampled directly from p_params.
             self.top_down_layers.append(
                 TopDownLayer(
-                    n_res_blocks=blocks_per_layer,
                     n_filters=n_filters,
                     is_top_layer=is_top,
-                    downsampling_steps=downsampling[i],
+                    upsampling=downsampling[i],
                     merge_type=merge_type,
-                    batchnorm=batchnorm,
                     skip=td_skip,
                     res_block_type=res_block_type,
                     gated=gated,
                 ))
 
         # Final top-down layer
-        modules = list()
-        for i in range(blocks_per_layer):
-            modules.append(
-                TopDownResBlock(
+        self.final_top_down = TopDownResBlock(
                     c_in=n_filters,
-                    c_out=n_filters if i <
-                    (blocks_per_layer - 1) else colour_channels,
-                    batchnorm=batchnorm,
+                    c_out=colour_channels,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.final_top_down = nn.Sequential(*modules)
+                )
 
     def forward(self, x):
         # Pad x to have base 2 side lengths to make resampling steps simpler
@@ -208,25 +200,25 @@ class UNet(nn.Module):
 
     def get_padded_size(self, size):
         """
-        Returns the smallest size (H, W) of the image with actual size given
-        as input, such that H and W are powers of 2.
-        :param size: input size, tuple either (N, C, H, w) or (H, W)
-        :return: 2-tuple (H, W)
+        Returns the smallest size (D, H, W) of the image with actual size given
+        as input, such that D, H and W are powers of 2.
+        :param size: input size, tuple either (N, C, D, H, w) or (D, H, W)
+        :return: 3-tuple (D, H, W)
         """
 
         # Overall downscale factor from input to top layer (power of 2)
         dwnsc = self.overall_downscale_factor
 
-        # Make size argument into (heigth, width)
-        if len(size) == 4:
+        # Make size argument into (depth, heigth, width)
+        if len(size) == 5:
             size = size[2:]
-        if len(size) != 2:
-            msg = ("input size must be either (N, C, H, W) or (H, W), but it "
+        if len(size) != 3:
+            msg = ("input size must be either (N, C, D, H, W) or (D, H, W), but it "
                    "has length {} (size={})".format(len(size), size))
             raise RuntimeError(msg)
 
         # Output smallest powers of 2 that are larger than current sizes
-        padded_size = list(((s - 1) // dwnsc + 1) * dwnsc for s in size)
+        padded_size = list(((s - 1) // d + 1) * d for d, s in zip(dwnsc, size))
 
         return padded_size
 

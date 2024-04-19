@@ -7,7 +7,7 @@ from ..lib.nn import ResidualBlock
 class TopDownLayer(nn.Module):
     """
     Top-down layer, including stochastic sampling, KL computation, and small
-    deterministic ResNet with upsampling.
+    deterministic ResNet with per dimension upsampling.
 
     The architecture when doing inference is roughly as follows:
        p_params = output of top-down layer above
@@ -26,12 +26,11 @@ class TopDownLayer(nn.Module):
     """
 
     def __init__(self,
-                 n_res_blocks,
                  n_filters,
                  is_top_layer=False,
-                 downsampling_steps=None,
+                 upsampling=False,
                  merge_type=None,
-                 batchnorm=True,
+                 kernel_size=3,
                  skip=False,
                  res_block_type=None,
                  gated=None):
@@ -41,44 +40,30 @@ class TopDownLayer(nn.Module):
         self.is_top_layer = is_top_layer
         self.skip = skip
 
-        # Downsampling steps left to undo in this layer
-        dws_left = downsampling_steps
-
-        # Define deterministic top-down block: sequence of deterministic
-        # residual blocks with downsampling when needed.
-        block_list = []
-        for _ in range(n_res_blocks):
-            do_resample = False
-            if dws_left > 0:
-                do_resample = True
-                dws_left -= 1
-            block_list.append(
-                TopDownResBlock(
+        # Define deterministic top-down residual block
+        self.res_block = TopDownResBlock(
                     n_filters,
                     n_filters,
-                    upsample=do_resample,
-                    batchnorm=batchnorm,
+                    upsampling=upsampling,
+                    res_block_kernel=kernel_size,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.blocks = nn.Sequential(*block_list)
+                )
 
         if not is_top_layer:
-            # Merge layer, combine bottom-up inference with top-down
-            # generative to give posterior parameters
+            # Merge layer, combine bottom-up skip connetions with
+            # top-down parameters
             self.merge = MergeLayer(
                 channels=n_filters,
                 merge_type=merge_type,
-                batchnorm=batchnorm,
                 res_block_type=res_block_type,
             )
 
-            # Skip connection that goes around the stochastic top-down layer
+            # Skip connection that goes around the top-down layer
             if skip:
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
                     merge_type='residual',
-                    batchnorm=batchnorm,
                     res_block_type=res_block_type,
                 )
 
@@ -102,46 +87,36 @@ class TopDownLayer(nn.Module):
             output = self.skip_connection_merger(output, skip_connection_input)
 
         # Last top-down block (sequence of residual blocks)
-        output = self.blocks(output)
+        output = self.res_block(output)
 
         return output
 
 
 class BottomUpLayer(nn.Module):
     """
-    Bottom-up deterministic layer for inference, roughly the same as the
-    small deterministic Resnet in top-down layers. Consists of a sequence of
-    bottom-up deterministic residual blocks with downsampling.
+    Bottom-up deterministic layer for inference. Essentially a ResBlock
+    with optional per-dimension downsampling.
     """
 
     def __init__(self,
-                 n_res_blocks,
                  n_filters,
-                 downsampling_steps=0,
-                 batchnorm=True,
+                 downsampling=False,
+                 kernel_size=3,
                  res_block_type=None,
                  gated=None):
         super().__init__()
 
-        bu_blocks = []
-        for _ in range(n_res_blocks):
-            do_resample = False
-            if downsampling_steps > 0:
-                do_resample = True
-                downsampling_steps -= 1
-            bu_blocks.append(
-                BottomUpResBlock(
+        self.res_block = BottomUpResBlock(
                     c_in=n_filters,
                     c_out=n_filters,
-                    downsample=do_resample,
-                    batchnorm=batchnorm,
+                    downsampling=downsampling,
+                    res_block_kernel=kernel_size,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.net = nn.Sequential(*bu_blocks)
+                )
 
     def forward(self, x):
-        return self.net(x)
+        return self.res_block(x)
 
 
 class ResBlockWithResampling(nn.Module):
@@ -150,17 +125,15 @@ class ResBlockWithResampling(nn.Module):
 
     The mode can be top-down or bottom-up, and the block does up- and
     down-sampling by a factor of 2, respectively. Resampling is performed at
-    the beginning of the block, through average pooling.
+    the beginning of the block, through strided convolution.
 
     The number of channels is adjusted at the beginning and end of the block,
     through convolutional layers with kernel size 1. The number of internal
     channels is by default the same as the number of output channels, but
     min_inner_channels overrides this behaviour.
 
-    Other parameters: kernel size, nonlinearity, and groups of the internal
-    residual block; whether batch normalization and dropout are performed;
-    whether the residual path has a gate layer at the end. There are two
-    residual block structures to choose from.
+    Other parameters: kernel size, and groups of the internal
+    residual block; whether the residual path has a gate layer at the end. 
     """
 
     def __init__(self,
@@ -170,7 +143,6 @@ class ResBlockWithResampling(nn.Module):
                  resample=False,
                  res_block_kernel=None,
                  groups=1,
-                 batchnorm=True,
                  res_block_type=None,
                  min_inner_channels=None,
                  gated=None):
@@ -178,40 +150,44 @@ class ResBlockWithResampling(nn.Module):
         assert mode in ['top-down', 'bottom-up']
         if min_inner_channels is None:
             min_inner_channels = 0
+        if isinstance(resample, bool):
+            resample = [resample] * 3
+        else:
+            assert len(resample) == 3
         inner_filters = max(c_out, min_inner_channels)
 
         # Define first conv layer to change channels and/or up/downsample
         if resample:
             if mode == 'bottom-up':  # downsample
-                self.pre_conv = nn.Conv2d(c_in,
+                stride = tuple([int(x) + 1 for x in resample])
+                self.pre_conv = nn.Conv3d(c_in,
                                           inner_filters,
                                           kernel_size=3,
-                                          stride=2,
+                                          stride=stride,
                                           padding=1,
                                           padding_mode='replicate',
                                           groups=groups)
             elif mode == 'top-down':  # upsample
+                scale_factor = tuple([int(x) + 1 for x in resample])
                 self.pre_conv = nn.Sequential(
-                    nn.Upsample(scale_factor=2, mode='nearest'),
-                    nn.Conv2d(c_in, inner_filters, 1, groups=groups))
+                    nn.Upsample(scale_factor=scale_factor, mode='trilinear'),
+                    nn.Conv3d(c_in, inner_filters, 1, groups=groups))
         elif c_in != inner_filters:
-            self.pre_conv = nn.Conv2d(c_in, inner_filters, 1, groups=groups)
+            self.pre_conv = nn.Conv3d(c_in, inner_filters, 1, groups=groups)
         else:
             self.pre_conv = None
 
         # Residual block
         self.res = ResidualBlock(
             channels=inner_filters,
-            kernel=res_block_kernel,
-            groups=groups,
-            batchnorm=batchnorm,
+            kernel_size=res_block_kernel,
             gated=gated,
             block_type=res_block_type,
         )
 
         # Define last conv layer to get correct num output channels
         if inner_filters != c_out:
-            self.post_conv = nn.Conv2d(inner_filters, c_out, 1, groups=groups)
+            self.post_conv = nn.Conv3d(inner_filters, c_out, 1, groups=groups)
         else:
             self.post_conv = None
 
@@ -226,15 +202,15 @@ class ResBlockWithResampling(nn.Module):
 
 class TopDownResBlock(ResBlockWithResampling):
 
-    def __init__(self, *args, upsample=False, **kwargs):
-        kwargs['resample'] = upsample
+    def __init__(self, *args, upsampling=False, **kwargs):
+        kwargs['resample'] = upsampling
         super().__init__('top-down', *args, **kwargs)
 
 
 class BottomUpResBlock(ResBlockWithResampling):
 
-    def __init__(self, *args, downsample=False, **kwargs):
-        kwargs['resample'] = downsample
+    def __init__(self, *args, downsampling=False, **kwargs):
+        kwargs['resample'] = downsampling
         super().__init__('bottom-up', *args, **kwargs)
 
 
@@ -260,12 +236,11 @@ class MergeLayer(nn.Module):
         assert len(channels) == 3
 
         if merge_type == 'linear':
-            self.layer = nn.Conv2d(channels[0] + channels[1], channels[2], 1)
+            self.layer = nn.Conv3d(channels[0] + channels[1], channels[2], 1)
         elif merge_type == 'residual':
             self.layer = nn.Sequential(
-                nn.Conv2d(channels[0] + channels[1], channels[2], 1, padding=0),
+                nn.Conv3d(channels[0] + channels[1], channels[2], 1, padding=0),
                 ResidualBlock(channels[2],
-                              batchnorm=batchnorm,
                               block_type=res_block_type,
                               gated=True),
             )

@@ -16,12 +16,10 @@ class LadderVAE(nn.Module):
 
     Args:
         colour_channels (int): Number of input image channels.
-        img_shape (tuple): Shape of the input image (height, width).
+        img_shape (tuple): Shape of the input image (depth, height, width).
         s_code_channels (int): Number of channels in the returned latent code.
-        z_dims (list, optional): List of dimensions for the latent variables z.
+        z_dims (list(int), optional): List of dimensions for the latent variables z.
             If not provided, default value of [32] * 12 will be used.
-        blocks_per_layer (int, optional): Number of residual blocks per layer.
-            Default: 1.
         n_filters (int, optional): Number of filters in the convolutional layers.
             Default: 64.
         learn_top_prior (bool, optional): Whether to learn the top prior.
@@ -33,10 +31,9 @@ class LadderVAE(nn.Module):
             Default: True.
         gated (bool, optional): Whether to use gated activations in the layers.
             Default: True.
-        batchnorm (bool, optional): Whether to use batch normalization in the layers.
-            Default: True.
-        downsampling (list, optional): List of downsampling steps per layer.
-            If not provided, default value of [0] * n_layers will be used.
+        downsampling (list(list(bool)), optional): List of bool for downsampling per 
+            dimension per layer. If not provided, default value of 
+            [[False, False, False]] * n_layers will be used.
         mode_pred (bool, optional): Whether to predict the mode of the distribution.
             Default: False.
     """
@@ -49,14 +46,12 @@ class LadderVAE(nn.Module):
         img_shape,
         s_code_channels,
         z_dims=None,
-        blocks_per_layer=1,
         n_filters=64,
         learn_top_prior=True,
         res_block_type="bacbac",
         merge_type="residual",
         stochastic_skip=True,
         gated=True,
-        batchnorm=True,
         downsampling=None,
         mode_pred=False,
     ):
@@ -66,25 +61,34 @@ class LadderVAE(nn.Module):
         self.img_shape = tuple(img_shape)
         self.z_dims = z_dims
         self.n_layers = len(self.z_dims)
-        self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
         self.stochastic_skip = stochastic_skip
         self.gated = gated
         self.mode_pred = mode_pred
 
-        # Number of downsampling steps per layer
+        # Downsampling parameter should be a list with one boolean per dimension
         if downsampling is None:
-            downsampling = [0] * self.n_layers
+            downsampling = [[False, False, False]] * self.n_layers
+        elif isinstance(downsampling, bool):
+            downsampling = [[downsampling] * 3] * self.n_layers
+        elif all(isinstance(d, bool) for d in downsampling):
+            downsampling = [[d] * 3 for d in downsampling]
 
-        # Downsample by a factor of 2 at each downsampling operation
-        self.overall_downscale_factor = np.power(2, sum(downsampling))
+        # Count overall downscale factor per dimension
+        self.overall_downscale_factor_D = np.power(2, sum(d[0] for d in downsampling))
+        self.overall_downscale_factor_H = np.power(2, sum(d[1] for d in downsampling))
+        self.overall_downscale_factor_W = np.power(2, sum(d[2] for d in downsampling))
+        self.overall_downscale_factor = (
+            self.overall_downscale_factor_D,
+            self.overall_downscale_factor_H,
+            self.overall_downscale_factor_W,
+        )
 
-        assert max(downsampling) <= self.blocks_per_layer
         assert len(downsampling) == self.n_layers
 
         # First bottom-up layer: change num channels
         self.first_bottom_up = nn.Sequential(
-            nn.Conv2d(colour_channels,
+            nn.Conv3d(colour_channels,
                       n_filters,
                       5,
                       padding=2,
@@ -93,7 +97,6 @@ class LadderVAE(nn.Module):
             BottomUpDeterministicResBlock(
                 c_in=n_filters,
                 c_out=n_filters,
-                batchnorm=batchnorm,
                 res_block_type=res_block_type,
             ),
         )
@@ -111,10 +114,8 @@ class LadderVAE(nn.Module):
             # possibly with downsampling between them.
             self.bottom_up_layers.append(
                 BottomUpLayer(
-                    n_res_blocks=self.blocks_per_layer,
                     n_filters=n_filters,
-                    downsampling_steps=downsampling[i],
-                    batchnorm=batchnorm,
+                    downsampling=downsampling[i],
                     res_block_type=res_block_type,
                     gated=gated,
                 ))
@@ -133,12 +134,10 @@ class LadderVAE(nn.Module):
             self.top_down_layers.append(
                 TopDownLayer(
                     z_dim=z_dims[i],
-                    n_res_blocks=blocks_per_layer,
                     n_filters=n_filters,
                     is_top_layer=is_top,
-                    downsampling_steps=downsampling[i],
+                    upsampling=downsampling[i],
                     merge_type=merge_type,
-                    batchnorm=batchnorm,
                     stochastic_skip=stochastic_skip,
                     learn_top_prior=learn_top_prior,
                     top_prior_param_shape=self.get_top_prior_param_shape(),
@@ -147,18 +146,12 @@ class LadderVAE(nn.Module):
                 ))
 
         # Final top-down layer
-        modules = list()
-        for i in range(blocks_per_layer):
-            modules.append(
-                TopDownDeterministicResBlock(
+        self.final_top_down = TopDownDeterministicResBlock(
                     c_in=n_filters,
-                    c_out=n_filters if i <
-                    (blocks_per_layer - 1) else s_code_channels,
-                    batchnorm=batchnorm,
+                    c_out=s_code_channels,
                     res_block_type=res_block_type,
                     gated=gated,
-                ))
-        self.final_top_down = nn.Sequential(*modules)
+                )
 
     def forward(self, x):
         # Pad x to have base 2 side lengths to make resampling steps simpler
@@ -176,7 +169,7 @@ class LadderVAE(nn.Module):
             # Calculate KL divergence
             kl_sums = [torch.sum(layer) for layer in kl]
             kl_loss = sum(kl_sums) / float(
-                x.shape[0] * x.shape[1] * x.shape[2] * x.shape[3])
+                x.shape[0] * x.shape[1] * x.shape[2] * x.shape[3] * x.shape[4])
         else:
             kl_loss = None
 
@@ -288,25 +281,25 @@ class LadderVAE(nn.Module):
 
     def get_padded_size(self, size):
         """
-        Returns the smallest size (H, W) of the image with actual size given
-        as input, such that H and W are powers of 2.
-        :param size: input size, tuple either (N, C, H, w) or (H, W)
-        :return: 2-tuple (H, W)
+        Returns the smallest size (D, H, W) of the image with actual size given
+        as input, such that D, H and W are powers of 2.
+        :param size: input size, tuple either (N, C, D, H, w) or (D, H, W)
+        :return: 3-tuple (D, H, W)
         """
 
         # Overall downscale factor from input to top layer (power of 2)
         dwnsc = self.overall_downscale_factor
 
-        # Make size argument into (heigth, width)
-        if len(size) == 4:
+        # Make size argument into (depth, heigth, width)
+        if len(size) == 5:
             size = size[2:]
-        if len(size) != 2:
-            msg = ("input size must be either (N, C, H, W) or (H, W), but it "
+        if len(size) != 3:
+            msg = ("input size must be either (N, C, D, H, W) or (D, H, W), but it "
                    "has length {} (size={})".format(len(size), size))
             raise RuntimeError(msg)
 
         # Output smallest powers of 2 that are larger than current sizes
-        padded_size = list(((s - 1) // dwnsc + 1) * dwnsc for s in size)
+        padded_size = list(((s - 1) // d + 1) * d for d, s in zip(dwnsc, size))
 
         return padded_size
 
@@ -314,8 +307,9 @@ class LadderVAE(nn.Module):
         # TODO num channels depends on random variable we're using
         dwnsc = self.overall_downscale_factor
         sz = self.get_padded_size(self.img_shape)
-        h = sz[0] // dwnsc
-        w = sz[1] // dwnsc
+        d = sz[0] // dwnsc[0]
+        h = sz[1] // dwnsc[1]
+        w = sz[2] // dwnsc[2]
         c = self.z_dims[-1] * 2  # mu and log-sigma
-        top_layer_shape = (n_imgs, c, h, w)
+        top_layer_shape = (n_imgs, c, d, h, w)
         return top_layer_shape

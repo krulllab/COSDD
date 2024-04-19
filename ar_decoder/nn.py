@@ -17,14 +17,14 @@ class Shifted1DConvolution(nn.Module):
 
         shift = dilation * (kernel_size - 1)
 
-        self.pad = nn.ConstantPad2d((shift, 0, 0, 0), 0)
+        self.pad = nn.ConstantPad3d((shift, 0, 0, 0, 0, 0), 0)
 
-        self.conv = nn.Conv2d(in_channels,
-                              out_channels, (1, kernel_size),
+        self.conv = nn.Conv3d(in_channels,
+                              out_channels, (1, 1, kernel_size),
                               dilation=dilation)
 
         if self.first:
-            kernel_mask = torch.ones((1, 1, 1, kernel_size))
+            kernel_mask = torch.ones((1, 1, 1, 1, kernel_size))
             kernel_mask[..., -1] = 0
             self.register_buffer("kernel_mask", kernel_mask)
 
@@ -51,9 +51,9 @@ class Block(nn.Module):
 
         self.in_conv = Shifted1DConvolution(in_channels, out_channels,
                                             kernel_size, dilation, first)
-        self.s_conv = nn.Conv2d(s_code_channels, out_channels, 1)
+        self.s_conv = nn.Conv3d(s_code_channels, out_channels, 1)
         self.act_fn = nn.ReLU()
-        self.out_conv = nn.Conv2d(out_channels, out_channels, 1)
+        self.out_conv = nn.Conv3d(out_channels, out_channels, 1)
 
         if out_channels == in_channels:
             self.do_skip = True
@@ -73,40 +73,62 @@ class Block(nn.Module):
 
 class Layers(nn.Module):
 
-    def __init__(self, colour_channels, s_code_channels, kernel_size, n_filters,
-                 n_layers, rotate90):
+    def __init__(
+        self,
+        colour_channels,
+        s_code_channels,
+        kernel_size,
+        n_filters,
+        n_layers,
+        direction="x",
+    ):
         super().__init__()
 
         middle_layer = n_layers // 2 + n_layers % 2
 
         layers = []
-        if rotate90:
-            layers.append(Rotate90(k=1))
+        if direction == "y":
+            layers.append(Rotate90(k=1, dims=[-2, -1]))
+        elif direction == "z":
+            layers.append(Rotate90(k=1, dims=[-3, -1]))
+        elif direction != "x":
+            raise ValueError(
+                f"Direction {direction} not supported. Use 'x', 'y' or 'z'."
+            )
 
         for i in range(n_layers):
-            c_in = colour_channels if i == 0 else n_filters
-            first = True if i == 0 else False
-            dilation = 2**i if i < middle_layer else 2**(n_layers - i - 1)
+            first = i == 0
+            c_in = colour_channels if first else n_filters
+            dilation = 2**i if i < middle_layer else 2 ** (n_layers - i - 1)
 
             layers.append(
-                Block(in_channels=c_in,
-                      out_channels=n_filters,
-                      s_code_channels=s_code_channels,
-                      kernel_size=kernel_size,
-                      dilation=dilation,
-                      first=first))
+                Block(
+                    in_channels=c_in,
+                    out_channels=n_filters,
+                    s_code_channels=s_code_channels,
+                    kernel_size=kernel_size,
+                    dilation=dilation,
+                    first=first,
+                )
+            )
             layers.append(
-                Block(in_channels=n_filters,
-                      out_channels=n_filters,
-                      s_code_channels=s_code_channels,
-                      kernel_size=kernel_size))
+                Block(
+                    in_channels=n_filters,
+                    out_channels=n_filters,
+                    s_code_channels=s_code_channels,
+                    kernel_size=kernel_size,
+                )
+            )
 
-        if rotate90:
-            layers.append(Rotate90(3))
+        if direction == "y":
+            layers.append(Rotate90(k=-1, dims=[-2, -1]))
+        elif direction == "z":
+            layers.append(Rotate90(k=-1, dims=[-3, -1]))
 
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x, s_code):
         for layer in self.layers:
             x, s_code = layer(x, s_code)
+
         return x

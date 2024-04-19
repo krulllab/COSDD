@@ -1,6 +1,26 @@
+import random
+
 import torch
 import numpy as np
 from sklearn.linear_model import LinearRegression
+
+
+class RandomCrop3D:
+    """Randomly crop a 3D tensor"""
+    def __init__(self, size: tuple):
+        self.size = size
+
+    def __call__(self, img):
+        D, H, W = self.size
+        d, h, w = img.size()[1:]
+        if d < D or h < H or w < W:
+            raise ValueError(f"Image size {img.size()} is smaller than crop size {self.size}")
+        
+        d_start = random.randint(0, d - D)
+        h_start = random.randint(0, h - H)
+        w_start = random.randint(0, w - W)
+        return img[:, d_start:d_start + D, h_start:h_start + H, w_start:w_start + W]
+
 
 def autocorrelation(arrs, max_lag=25):
     """ Compute the spatial autocorrelation of a list of arrays.

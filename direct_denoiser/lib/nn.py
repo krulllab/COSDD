@@ -20,64 +20,56 @@ class ResidualBlock(nn.Module):
     For example, bacbac has 2x (batchnorm, activation, conv).
     """
 
-    default_kernel_size = (3, 3)
+    default_kernel_size = (3, 3, 3)
 
     def __init__(self,
                  channels,
-                 kernel=None,
+                 kernel_size=None,
                  groups=1,
-                 batchnorm=True,
                  block_type=None,
                  gated=None):
         super().__init__()
-        if kernel is None:
-            kernel = self.default_kernel_size
-        elif isinstance(kernel, int):
-            kernel = (kernel, kernel)
-        elif len(kernel) != 2:
+        if kernel_size is None:
+            kernel_size = self.default_kernel_size
+        elif isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size, kernel_size)
+        elif len(kernel_size) != 3:
             raise ValueError(
-                "kernel has to be None, int, or an iterable of length 2")
-        assert all([k % 2 == 1 for k in kernel]), "kernel sizes have to be odd"
-        kernel = list(kernel)
-        pad = [k // 2 for k in kernel]
+                "kernel has to be None, int, or an iterable of length 3")
+        assert all([k % 2 == 1 for k in kernel_size]), "kernel sizes have to be odd"
+        kernel_size = list(kernel_size)
+        if block_type is None:
+            block_type = "bacbac"
         self.gated = gated
 
-        modules = []
-        if block_type == 'cabcab':
-            for i in range(2):
-                conv = nn.Conv2d(channels,
-                                 channels,
-                                 kernel[i],
-                                 padding=pad[i],
-                                 groups=groups)
-                modules.append(conv)
-                modules.append(nn.Mish())
-                if batchnorm:
-                    modules.append(nn.BatchNorm2d(channels))
+        component_dict = {
+            "a": lambda: nn.Mish(),
+            "b": lambda: nn.BatchNorm3d(channels),
+            "c": lambda: nn.Conv3d(
+                channels,
+                channels,
+                kernel_size,
+                groups=groups,
+                padding="same",
+                padding_mode="replicate",
+            ),
+        }
 
-        elif block_type == 'bacbac':
-            for i in range(2):
-                if batchnorm:
-                    modules.append(nn.BatchNorm2d(channels))
-                modules.append(nn.Mish())
-                conv = nn.Conv2d(channels,
-                                 channels,
-                                 kernel[i],
-                                 padding=pad[i],
-                                 groups=groups)
-                modules.append(conv)
-        else:
-            raise ValueError("Unrecognized block type '{}'".format(block_type))
+        modules = []
+        for component in block_type:
+            modules.append(
+                component_dict.get(component, f"Unrecognized component '{component}'")()
+            )
 
         if gated:
-            modules.append(GateLayer2d(channels, 1))
+            modules.append(GateLayer3d(channels, 1))
         self.block = nn.Sequential(*modules)
 
     def forward(self, x):
         return self.block(x) + x
 
 
-class GateLayer2d(nn.Module):
+class GateLayer3d(nn.Module):
     """
     Double the number of channels through a convolutional layer, then use
     half the channels as gate for the other half.
@@ -87,7 +79,7 @@ class GateLayer2d(nn.Module):
         super().__init__()
         assert kernel_size % 2 == 1
         pad = kernel_size // 2
-        self.conv = nn.Conv2d(channels, 2 * channels, kernel_size, padding=pad)
+        self.conv = nn.Conv3d(channels, 2 * channels, kernel_size, padding=pad)
         self.nonlin = nn.Tanh()
 
     def forward(self, x):

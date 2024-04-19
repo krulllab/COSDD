@@ -1,11 +1,11 @@
 import torch
-import pytorch_lightning as pl
+import lightning as L
 from torch import optim
 import random
 import numpy as np
 
 
-class DVLAE(pl.LightningModule):
+class DVLAE(L.LightningModule):
     """Module to unify the training of the VAE and direct denoiser.
 
 
@@ -152,7 +152,7 @@ class DVLAE(pl.LightningModule):
             dd_scheduler.step(self.trainer.callback_metrics["val/dd_loss"])
 
     def log_tensorboard_images(self, img, img_name):
-        img = img.cpu().numpy()
+        img = img.cpu().half().numpy()
         normalised_img = (img - np.percentile(img, 1)) / (
             np.percentile(img, 99) - np.percentile(img, 1)
         )
@@ -184,16 +184,18 @@ class DVLAE(pl.LightningModule):
             self.log("val/dd_loss", dd_loss)
 
         if batch_idx == 0:
+            """Visualises a slice in depth for 3D tensors
+            """
             idx = random.randint(0, batch.shape[0] - 1)
             out = self.forward(batch[idx : idx + 1].repeat_interleave(10, 0))
             mmse = torch.mean(out["s_hat"], 0, keepdim=True)
-            self.log_tensorboard_images(batch[idx], "inputs/noisy")
-            self.log_tensorboard_images(out["s_hat"][0], "outputs/sample 1")
-            self.log_tensorboard_images(out["s_hat"][1], "outputs/sample 2")
-            self.log_tensorboard_images(mmse[0], "outputs/mmse (10 samples)")
+            self.log_tensorboard_images(batch[idx, :, 0], "inputs/noisy")
+            self.log_tensorboard_images(out["s_hat"][0, :, 0], "outputs/sample 1")
+            self.log_tensorboard_images(out["s_hat"][1, :, 0], "outputs/sample 2")
+            self.log_tensorboard_images(mmse[0, :, 0], "outputs/mmse (10 samples)")
             if out["s_direct"] is not None:
                 self.log_tensorboard_images(
-                    out["s_direct"][0], "outputs/direct estimate"
+                    out["s_direct"][0, :, 0], "outputs/direct estimate"
                 )
 
     def predict_step(self, batch, _):
