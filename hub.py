@@ -245,7 +245,11 @@ class Hub(pl.LightningModule):
         self.eval()
         x = (batch - self.data_mean) / self.data_std
         if self.direct_pred == True:
-            s_hat = self.direct_denoiser(x)
+            if self.direct_denoiser is not None:
+                s_hat = self.direct_denoiser(x)
+            else:
+                print("Direct denoiser not trained. Set use_direct_denoiser in training script to True.")
+                return
         else:
             vae_out = self.vae(x)
             s_code = vae_out["s_code"]
