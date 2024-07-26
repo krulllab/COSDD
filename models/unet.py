@@ -33,6 +33,7 @@ class UNet(nn.Module):
         downsampling=None,
         loss_fn="L2",
         checkpointed=False,
+        dimensions=2,
     ):
         super().__init__()
         self.n_layers = n_layers
@@ -57,12 +58,14 @@ class UNet(nn.Module):
                 5,
                 padding=2,
                 padding_mode="replicate",
+                dimensions=dimensions,
             ),
             nn.Mish(),
             ResBlockWithResampling(
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
+                dimensions=dimensions,
             ),
         )
 
@@ -77,6 +80,7 @@ class UNet(nn.Module):
                     n_res_blocks=self.blocks_per_layer,
                     n_filters=n_filters,
                     downsampling_steps=downsampling[i],
+                    dimensions=dimensions,
                 )
             )
 
@@ -87,6 +91,7 @@ class UNet(nn.Module):
                     is_top_layer=is_top,
                     upsampling_steps=downsampling[i],
                     skip=td_skip,
+                    dimensions=dimensions,
                 )
             )
 
@@ -96,6 +101,7 @@ class UNet(nn.Module):
                 ResBlockWithResampling(
                     c_in=n_filters,
                     c_out=n_filters if i < (blocks_per_layer - 1) else colour_channels,
+                    dimensions=dimensions,
                 )
             )
 

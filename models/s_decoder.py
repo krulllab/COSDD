@@ -24,6 +24,7 @@ class SDecoder(nn.Module):
         n_layers=4,
         kernel_size=3,
         checkpointed=False,
+        dimensions=2,
     ):
         super().__init__()
         self.checkpointed = checkpointed
@@ -39,6 +40,7 @@ class SDecoder(nn.Module):
                     kernel_size,
                     padding=kernel_size // 2,
                     padding_mode="reflect",
+                    dimensions=dimensions,
                 ),
                 nn.ReLU(),
             )
@@ -52,6 +54,7 @@ class SDecoder(nn.Module):
                         kernel_size,
                         padding=kernel_size // 2,
                         padding_mode="reflect",
+                        dimensions=dimensions,
                     ),
                     nn.ReLU(),
                 )
@@ -63,6 +66,7 @@ class SDecoder(nn.Module):
                 kernel_size,
                 padding=kernel_size // 2,
                 padding_mode="reflect",
+                dimensions=dimensions,
             )
         )
 

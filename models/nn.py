@@ -28,6 +28,7 @@ class Conv(nn.Module):
         padding_mode="zeros",
         device=None,
         dtype=None,
+        dimensions=2,
     ):
         super().__init__()
         self.args = {
@@ -43,25 +44,19 @@ class Conv(nn.Module):
             "device": device,
             "dtype": dtype,
         }
-
-    def lazy_dims_init(self, x):
-        d = x.dim() - 2
-        conv = getattr(nn, f"Conv{d}d")
-
+        conv = getattr(nn, f"Conv{dimensions}d")
         self.conv = conv(**self.args)
 
     def forward(self, x):
-        if not hasattr(self, "conv"):
-            self.lazy_dims_init(x)
         return self.conv(x)
 
 
 class GateLayer(nn.Module):
-    def __init__(self, channels, kernel_size):
+    def __init__(self, channels, kernel_size, dimensions=2):
         super().__init__()
         assert kernel_size % 2 == 1
         pad = kernel_size // 2
-        self.conv = Conv(channels, 2 * channels, kernel_size, padding=pad)
+        self.conv = Conv(channels, 2 * channels, kernel_size, padding=pad, dimensions=dimensions)
         self.nonlin = nn.Tanh()
 
     def forward(self, x):
@@ -79,6 +74,7 @@ class ResidualBlock(nn.Module):
         kernel_size=3,
         groups=1,
         gated=True,
+        dimensions=2,
     ):
         super().__init__()
         self.channels = channels
@@ -88,9 +84,7 @@ class ResidualBlock(nn.Module):
         self.groups = groups
         self.gated = gated
 
-    def lazy_dims_init(self, x):
-        d = x.dim() - 2
-        BatchNorm = getattr(nn, f"BatchNorm{d}d")
+        BatchNorm = getattr(nn, f"BatchNorm{dimensions}d")
 
         self.block = nn.Sequential()
         for _ in range(2):
@@ -102,14 +96,13 @@ class ResidualBlock(nn.Module):
                 self.kernel_size,
                 padding=self.pad,
                 groups=self.groups,
+                dimensions=dimensions,
             )
             self.block.append(conv)
         if self.gated:
-            self.block.append(GateLayer(self.channels, 1))
+            self.block.append(GateLayer(self.channels, 1, dimensions=dimensions))
 
     def forward(self, x):
-        if not hasattr(self, "block"):
-            self.lazy_dims_init(x)
         return self.block(x) + x
     
 
@@ -138,6 +131,7 @@ class ResBlockWithResampling(nn.Module):
         res_block_kernel=3,
         groups=1,
         gated=True,
+        dimensions=2,
     ):
         super().__init__()
         assert resample in ["up", "down", None]
@@ -145,7 +139,7 @@ class ResBlockWithResampling(nn.Module):
         if resample == "up":
             self.pre_conv = nn.Sequential(
                 LinearUpsample(scale_factor=2),
-                Conv(c_in, c_out, 1, groups=groups),
+                Conv(c_in, c_out, 1, groups=groups, dimensions=dimensions),
             )
         elif resample == "down":
             self.pre_conv = Conv(
@@ -156,9 +150,10 @@ class ResBlockWithResampling(nn.Module):
                 padding=1,
                 padding_mode="replicate",
                 groups=groups,
+                dimensions=dimensions,
             )
         elif c_in != c_out:
-            self.pre_conv = Conv(c_in, c_out, 1, groups=groups)
+            self.pre_conv = Conv(c_in, c_out, 1, groups=groups, dimensions=dimensions)
         else:
             self.pre_conv = nn.Identity()
 
@@ -167,6 +162,7 @@ class ResBlockWithResampling(nn.Module):
             kernel_size=res_block_kernel,
             groups=groups,
             gated=gated,
+            dimensions=dimensions,
         )
 
     def forward(self, x):
@@ -189,7 +185,7 @@ class MergeLayer(nn.Module):
 
     """
 
-    def __init__(self, channels):
+    def __init__(self, channels, dimensions=2):
         super().__init__()
         try:
             iter(channels)
@@ -201,9 +197,10 @@ class MergeLayer(nn.Module):
         assert len(channels) == 3
 
         self.layer = nn.Sequential(
-            Conv(channels[0] + channels[1], channels[2], 1),
+            Conv(channels[0] + channels[1], channels[2], 1, dimensions=dimensions),
             ResidualBlock(
                 channels[2],
+                dimensions=dimensions,
             ),
         )
 
@@ -232,6 +229,7 @@ class BottomUpLayer(nn.Module):
         n_res_blocks,
         n_filters,
         downsampling_steps=0,
+        dimensions=2,
     ):
         super().__init__()
 
@@ -246,6 +244,7 @@ class BottomUpLayer(nn.Module):
                     c_in=n_filters,
                     c_out=n_filters,
                     resample=resample,
+                    dimensions=dimensions,
                 )
             )
 
@@ -281,6 +280,7 @@ class TopDownLayer(nn.Module):
         is_top_layer=False,
         upsampling_steps=None,
         skip=False,
+        dimensions=2,
     ):
         super().__init__()
 
@@ -298,17 +298,20 @@ class TopDownLayer(nn.Module):
                     n_filters,
                     n_filters,
                     resample=resample,
+                    dimensions=dimensions,
                 )
             )
 
         if not is_top_layer:
             self.merge = MergeLayer(
                 channels=n_filters,
+                dimensions=dimensions,
             )
 
             if skip:
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
+                    dimensions=dimensions,
                 )
 
     def forward(
@@ -347,7 +350,7 @@ class NormalStochasticBlock(nn.Module):
         transform_p_params (bool): Whether to double the channels of p(z) with a convolutional layer.
     """
 
-    def __init__(self, c_in, c_vars, c_out, kernel=3, transform_p_params=True):
+    def __init__(self, c_in, c_vars, c_out, kernel=3, transform_p_params=True, dimensions=2):
         super().__init__()
         assert kernel % 2 == 1
         pad = kernel // 2
@@ -363,6 +366,7 @@ class NormalStochasticBlock(nn.Module):
                 kernel,
                 padding=pad,
                 padding_mode="replicate",
+                dimensions=dimensions,
             )
         self.conv_in_q = Conv(
             c_in,
@@ -370,6 +374,7 @@ class NormalStochasticBlock(nn.Module):
             kernel,
             padding=pad,
             padding_mode="replicate",
+            dimensions=dimensions,
         )
         self.conv_out = Conv(
             c_vars,
@@ -377,6 +382,7 @@ class NormalStochasticBlock(nn.Module):
             kernel,
             padding=pad,
             padding_mode="replicate",
+            dimensions=dimensions,
         )
 
     def forward(
@@ -477,6 +483,7 @@ class VAETopDownLayer(nn.Module):
         stochastic_skip=False,
         learn_top_prior=False,
         top_prior_param_size=None,
+        dimensions=2,
     ):
         super().__init__()
 
@@ -500,6 +507,7 @@ class VAETopDownLayer(nn.Module):
                     n_filters,
                     n_filters,
                     resample=resample,
+                    dimensions=dimensions,
                 )
             )
 
@@ -508,16 +516,19 @@ class VAETopDownLayer(nn.Module):
             c_vars=z_dim,
             c_out=n_filters,
             transform_p_params=(not is_top_layer),
+            dimensions=dimensions,
         )
 
         if not is_top_layer:
             self.merge = MergeLayer(
                 channels=n_filters,
+                dimensions=dimensions,
             )
 
             if stochastic_skip:
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
+                    dimensions=dimensions,
                 )
 
     def forward(
@@ -612,6 +623,7 @@ class ShiftedConv(nn.Module):
         dilation=1,
         groups=1,
         first=False,
+        dimensions=2,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -624,29 +636,15 @@ class ShiftedConv(nn.Module):
         shift = dilation * (kernel_size - 1)
         self.padding = (shift, 0)
 
-    def lazy_dims_init(self, x):
-        """
-        Lazy initialization of dimensions.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-
-        Notes:
-            This method initializes the convolutional layer and the kernel mask.
-            The convolutional layer is initialized with zero weight parameters.
-            The kernel mask is a binary mask that zeros out the last element of the kernel if `first` is True.
-        """
-        d = x.dim() - 2
-
-        kernel_size = [1] * (d - 1) + [self.kernel_size]
+        kernel_size = [1] * (dimensions - 1) + [self.kernel_size]
         self.conv = Conv(
             self.in_channels,
             self.out_channels,
             kernel_size,
             dilation=self.dilation,
             groups=self.groups,
+            dimensions=dimensions,
         )
-        _ = self.conv(x)  # Initialise to zero weight parameters later
 
         kernel_mask = torch.ones((1, 1, *kernel_size))
         if self.first:
@@ -689,6 +687,7 @@ class PixelCNNBlock(nn.Module):
         groups=1,
         gated=False,
         first=False,
+        dimensions=2,
     ):
         super().__init__()
         mid_channels = out_channels * 2 if gated else out_channels
@@ -700,13 +699,14 @@ class PixelCNNBlock(nn.Module):
             dilation=dilation,
             groups=groups,
             first=first,
+            dimensions=dimensions,
         )
-        self.s_conv = Conv(s_code_channels, mid_channels, 1)
+        self.s_conv = Conv(s_code_channels, mid_channels, 1, dimensions=dimensions)
         if gated:
             self.act_fn = lambda x: torch.tanh(x[:, 0::2]) * torch.sigmoid(x[:, 1::2])
         else:
             self.act_fn = nn.ReLU()
-        self.out_conv = Conv(out_channels, out_channels, 1, groups=groups)
+        self.out_conv = Conv(out_channels, out_channels, 1, groups=groups, dimensions=dimensions)
 
         self.do_skip = out_channels == in_channels and not first
 
@@ -764,6 +764,7 @@ class PixelCNNLayers(nn.Module):
         direction="x",
         gated=False,
         checkpointed=False,
+        dimensions=2,
     ):
         super().__init__()
         self.checkpointed = checkpointed
@@ -796,6 +797,7 @@ class PixelCNNLayers(nn.Module):
                     groups=groups,
                     gated=gated,
                     first=first,
+                    dimensions=dimensions,
                 )
             )
             self.layers.append(
@@ -806,6 +808,7 @@ class PixelCNNLayers(nn.Module):
                     kernel_size=kernel_size,
                     groups=groups,
                     gated=gated,
+                    dimensions=dimensions,
                 )
             )
 

@@ -36,6 +36,7 @@ class LadderVAE(nn.Module):
         stochastic_skip=True,
         downsampling=None,
         checkpointed=False,
+        dimensions=2,
     ):
         if z_dims is None:
             z_dims = [32] * 12
@@ -64,12 +65,14 @@ class LadderVAE(nn.Module):
                 5,
                 padding=2,
                 padding_mode="replicate",
+                dimensions=dimensions,
             ),
             nn.Mish(),
             ResBlockWithResampling(
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
+                dimensions=dimensions,
             ),
         )
 
@@ -87,6 +90,7 @@ class LadderVAE(nn.Module):
                     n_res_blocks=self.blocks_per_layer,
                     n_filters=n_filters,
                     downsampling_steps=downsampling[i],
+                    dimensions=dimensions,
                 )
             )
 
@@ -111,6 +115,7 @@ class LadderVAE(nn.Module):
                     stochastic_skip=stochastic_skip,
                     learn_top_prior=learn_top_prior,
                     top_prior_param_size=self.get_top_prior_param_size(),
+                    dimensions=dimensions,
                 )
             )
 
@@ -120,6 +125,7 @@ class LadderVAE(nn.Module):
                 ResBlockWithResampling(
                     c_in=n_filters,
                     c_out=n_filters if i < (blocks_per_layer - 1) else s_code_channels,
+                    dimensions=dimensions,
                 )
             )
 

@@ -37,6 +37,7 @@ class PixelCNN(nn.Module):
         n_gaussians=5,
         gated=False,
         checkpointed=False,
+        dimensions=2,
     ):
         super().__init__()
         assert noise_direction in ("x", "y", "z")
@@ -58,6 +59,7 @@ class PixelCNN(nn.Module):
             direction=noise_direction,
             gated=gated,
             checkpointed=checkpointed,
+            dimensions=dimensions,
         )
 
         c_out = n_gaussians * colour_channels * 3
@@ -66,6 +68,7 @@ class PixelCNN(nn.Module):
             out_channels=c_out,
             kernel_size=1,
             groups=colour_channels,
+            dimensions=dimensions,
         )
 
     def forward(self, x, s_code):
