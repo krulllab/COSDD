@@ -68,31 +68,29 @@ class Hub(pl.LightningModule):
 
         self.direct_pred = False  # Whether to use direct denoiser for prediction
 
-    def forward(self, x):
+    def vae_forward(self, x):
         x = (x - self.data_mean) / self.data_std
 
         vae_out = self.vae(x)
         s_code = vae_out["s_code"]
 
         x_params = self.ar_decoder(x, s_code)
-
-        s_hat = self.s_decoder(s_code.detach())
-
-        if self.direct_denoiser is not None:# and self.current_epoch > 50:
-            s_direct = self.direct_denoiser(x)
-        else:
-            s_direct = None
-
         out = {
             "s_code": s_code,
             "q_list": vae_out["q_list"],
             "p_list": vae_out["p_list"],
             "x_params": x_params,
-            "s_hat": s_hat,
-            "s_direct": s_direct,
         }
-
         return out
+
+    def s_decoder_forward(self, s_code):
+        s_hat = self.s_decoder(s_code.detach())
+        return s_hat
+
+    def direct_denoiser_forward(self, x):
+        x = (x - self.data_mean) / self.data_std
+        s_direct = self.direct_denoiser(x)
+        return s_direct
 
     def configure_optimizers(self):
         optimizers = []
@@ -125,7 +123,7 @@ class Hub(pl.LightningModule):
 
         return optimizers, schedulers
     
-    def loss(self, batch, out):
+    def vae_loss(self, batch, out):
         x = (batch - self.data_mean) / self.data_std
 
         losses = {}
@@ -138,37 +136,47 @@ class Hub(pl.LightningModule):
         losses["elbo"] = elbo
         losses["kl_div"] = kl_div
         losses["nll"] = nll
-
-        sd_loss = self.s_decoder.loss(x, out["s_hat"]).mean()
-        losses["sd_loss"] = sd_loss
-
-        if self.direct_denoiser is not None:
-            dd_loss = self.direct_denoiser.loss(
-                out["s_hat"].detach(), out["s_direct"]
-            ).mean()
-            losses["dd_loss"] = dd_loss
-
         return losses
+        
+    def s_decoder_loss(self, x, s_hat):
+        x = (x - self.data_mean) / self.data_std
+        sd_loss = self.s_decoder.loss(x, s_hat).mean()
+        return sd_loss
+
+    def direct_denoiser_loss(self, s_hat, s_direct):
+        dd_loss = self.direct_denoiser.loss(
+            s_hat.detach(), s_direct
+        ).mean()
+        return dd_loss
 
     def training_step(self, batch, batch_idx):
-        out = self(batch)
-        losses = self.loss(batch, out)
-
-        self.manual_backward(losses["elbo"])
-        self.log("train/elbo", losses["elbo"])
-        self.log("train/kl_div", losses["kl_div"])
-        self.log("train/nll", losses["nll"])
-
-        self.manual_backward(losses["sd_loss"])
-        self.log("train/sd_loss", losses["sd_loss"])
-
-        if out["s_direct"] is not None:
-            self.manual_backward(losses["dd_loss"])
-            self.log("train/dd_loss", losses["dd_loss"])
-
+        vae_out = self.vae_forward(batch)
+        vae_losses = self.vae_loss(batch, vae_out)
+        self.manual_backward(vae_losses["elbo"])
+        self.log("train/elbo", vae_losses["elbo"])
+        self.log("train/kl_div", vae_losses["kl_div"])
+        self.log("train/nll", vae_losses["nll"])
         if (batch_idx + 1) % self.n_grad_batches == 0:
-            optimizers = self.optimizers()
-            for optimizer in optimizers:
+            optimizer = self.optimizers()[0]
+            optimizer.step()
+            optimizer.zero_grad()
+
+        s_hat = self.s_decoder_forward(vae_out["s_code"])
+        sd_loss = self.s_decoder_loss(batch, s_hat)
+        self.manual_backward(sd_loss)
+        self.log("train/sd_loss", sd_loss)
+        if (batch_idx + 1) % self.n_grad_batches == 0:
+            optimizer = self.optimizers()[1]
+            optimizer.step()
+            optimizer.zero_grad()
+
+        if self.direct_denoiser is not None:
+            s_direct = self.direct_denoiser_forward(batch)
+            dd_loss = self.direct_denoiser_loss(s_hat, s_direct)
+            self.manual_backward(dd_loss)
+            self.log("train/dd_loss", dd_loss)
+            if (batch_idx + 1) % self.n_grad_batches == 0:
+                optimizer = self.optimizers()[2]
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -223,23 +231,30 @@ class Hub(pl.LightningModule):
                 self.log_image(direct[0].cpu().half().numpy(), "outputs/direct estimate")
 
     def validation_step(self, batch, batch_idx):
-        out = self(batch)
-        losses = self.loss(batch, out)
+        vae_out = self.vae_forward(batch)
+        vae_losses = self.vae_loss(batch, vae_out)
+        self.log("val/elbo", vae_losses["elbo"])
+        self.log("val/kl_div", vae_losses["kl_div"])
+        self.log("val/nll", vae_losses["nll"])
 
-        self.log("val/elbo", losses["elbo"])
-        self.log("val/kl_div", losses["kl_div"])
-        self.log("val/nll", losses["nll"])
-        self.log("val/sd_loss", losses["sd_loss"])
+        s_hat = self.s_decoder_forward(vae_out["s_code"])
+        sd_loss = self.s_decoder_loss(batch, s_hat)
+        self.log("val/sd_loss", sd_loss)
 
-        if out["s_direct"] is not None:
-            self.log("val/dd_loss", losses["dd_loss"])
+        if self.direct_denoiser is not None:
+            s_direct = self.direct_denoiser_forward(batch)
+            dd_loss = self.direct_denoiser_loss(s_hat, s_direct)
+            self.log("val/dd_loss", dd_loss)
 
         if batch_idx == 0:
             idx = random.randint(0, batch.shape[0] - 1)
-            out = self.forward(batch[idx : idx + 1].repeat_interleave(10, 0))
-            mmse = torch.mean(out["s_hat"], 0, keepdim=True)
+            vae_out = self.vae_forward(batch[idx : idx + 1].repeat_interleave(10, 0))
+            s_hat = self.s_decoder_forward(vae_out["s_code"])
+            mmse = torch.mean(s_hat, 0, keepdim=True)
+            if self.direct_denoiser is not None:
+                s_direct = self.direct_denoiser_forward(batch[idx : idx + 1])
             x = (batch[idx : idx + 1] - self.data_mean) / self.data_std
-            self.log_val_images(x, out["s_hat"], mmse, out["s_direct"])
+            self.log_val_images(x, s_hat, mmse, s_direct)
 
     def predict_step(self, batch, _):
         self.eval()
