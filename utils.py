@@ -6,6 +6,40 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
 
+def patchify(x, patch_size):
+    """Patchify an n-dimensional array into non-overlapping patches.
+
+    If patch_size is not a divisor of the array shape, the edge patches will overlap
+    with the adjacent patches.
+    Args:
+        x (torch.Tensor): Array to patchify. Shape [B, C, Z | Y | X]
+        patch_size (tuple): Size of the patches. Shape [z | y | x]
+    Returns:
+        patches (torch.Tensor): Patchified array. Shape [B * n_patches, C, z | y | x]
+    """
+    dimensions = x.ndim - 2
+    assert (
+        len(patch_size) == dimensions
+    ), "Patch size must have the same number of dimensions as the array"
+
+    remainders = [s % p for s, p in zip(x.shape[2:], patch_size)]
+    remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
+    for d in remainder_dims:
+        pad = torch.narrow(x, d + 2, x.size(d + 2) - patch_size[d], patch_size[d]).contiguous()
+        x = torch.narrow(x, d + 2, 0, x.size(d + 2) - remainders[d]).contiguous()
+        x = torch.cat([x, pad], dim=d + 2)
+
+    for i in range(dimensions):
+        x = x.unfold(i + 2, patch_size[i], patch_size[i])
+    first_dims = [0] + [i + 2 for i in range(dimensions)]
+    remaining_dims = [1] + [i + dimensions + 2 for i in range(dimensions)]
+    new_dims = first_dims + remaining_dims
+    x = x.permute(new_dims).contiguous()
+    x = x.flatten(0, dimensions)
+
+    return x
+
+
 def autocorrelation(arr, max_lag=25):
     """Compute the autocorrelation over the last 2 dimensions of an arrays.
     Args:
