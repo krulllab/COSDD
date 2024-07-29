@@ -92,33 +92,31 @@ class Hub(pl.LightningModule):
         s_direct = self.direct_denoiser(x)
         return s_direct
 
+    def get_optimizer_scheduler(self, params):
+        optimizer = optim.Adamax(params)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=0.1, patience=50
+        )
+        return optimzer, scheduler
+
     def configure_optimizers(self):
         optimizers = []
         schedulers = []
 
         vae_params = list(self.vae.parameters()) + list(self.ar_decoder.parameters())
-        vae_optimizer = optim.Adamax(vae_params)
+        vae_optimizer, vae_scheduler = self.get_optimizer_scheduler(vae_params)
         optimizers.append(vae_optimizer)
-        vae_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            vae_optimizer, factor=0.1, patience=50
-        )
         schedulers.append(vae_scheduler)
 
         sd_params = self.s_decoder.parameters()
-        sd_optimizer = optim.Adamax(sd_params)
+        sd_optimizer, sd_scheduler = self.get_optimizer_scheduler(sd_params)
         optimizers.append(sd_optimizer)
-        sd_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            sd_optimizer, factor=0.1, patience=50
-        )
         schedulers.append(sd_scheduler)
 
         if self.direct_denoiser is not None:
             dd_params = self.direct_denoiser.parameters()
-            dd_optimizer = optim.Adamax(dd_params)
+            dd_optimizer, dd_scheduler = self.get_optimizer_scheduler(dd_params)
             optimizers.append(dd_optimizer)
-            dd_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                dd_optimizer, factor=0.1, patience=50
-            )
             schedulers.append(dd_scheduler)
 
         return optimizers, schedulers
@@ -153,9 +151,9 @@ class Hub(pl.LightningModule):
         vae_out = self.vae_forward(batch)
         vae_losses = self.vae_loss(batch, vae_out)
         self.manual_backward(vae_losses["elbo"])
-        self.log("train/elbo", vae_losses["elbo"])
-        self.log("train/kl_div", vae_losses["kl_div"])
-        self.log("train/nll", vae_losses["nll"])
+        self.log("train/elbo", vae_losses["elbo"], on_step=False, on_epoch=True)
+        self.log("train/kl_div", vae_losses["kl_div"], on_step=False, on_epoch=True)
+        self.log("train/nll", vae_losses["nll"], on_step=False, on_epoch=True)
         if (batch_idx + 1) % self.n_grad_batches == 0:
             optimizer = self.optimizers()[0]
             optimizer.step()
@@ -164,7 +162,7 @@ class Hub(pl.LightningModule):
         s_hat = self.s_decoder_forward(vae_out["s_code"])
         sd_loss = self.s_decoder_loss(batch, s_hat)
         self.manual_backward(sd_loss)
-        self.log("train/sd_loss", sd_loss)
+        self.log("train/sd_loss", sd_loss, on_step=False, on_epoch=True)
         if (batch_idx + 1) % self.n_grad_batches == 0:
             optimizer = self.optimizers()[1]
             optimizer.step()
@@ -174,7 +172,7 @@ class Hub(pl.LightningModule):
             s_direct = self.direct_denoiser_forward(batch)
             dd_loss = self.direct_denoiser_loss(s_hat, s_direct)
             self.manual_backward(dd_loss)
-            self.log("train/dd_loss", dd_loss)
+            self.log("train/dd_loss", dd_loss, on_step=False, on_epoch=True)
             if (batch_idx + 1) % self.n_grad_batches == 0:
                 optimizer = self.optimizers()[2]
                 optimizer.step()
@@ -204,6 +202,7 @@ class Hub(pl.LightningModule):
     def log_val_images(self, batch, samples, mmse, direct):
         d = batch.ndim - 2
         if d == 1:
+            # Make 1D plots
             for i in range(batch.size(1)):
                 figure = plt.figure()
                 plt.plot(batch[0, i].cpu().half(), label="Noisy", color="blue")
@@ -218,11 +217,13 @@ class Hub(pl.LightningModule):
                 plt.close(figure)
         else:
             if d == 3:
+                # Show the first slice of z-stack as image
                 batch = batch[:, :, 0]
                 samples = samples[:, :, 0]
                 mmse = mmse[:, :, 0]
                 if direct is not None:
                     direct = direct[:, :, 0]    
+            # Show 2D images
             self.log_image(batch[0].cpu().half().numpy(), "inputs/noisy")
             self.log_image(samples[0].cpu().half().numpy(), "outputs/sample 1")
             self.log_image(samples[1].cpu().half().numpy(), "outputs/sample 2")
@@ -233,18 +234,18 @@ class Hub(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         vae_out = self.vae_forward(batch)
         vae_losses = self.vae_loss(batch, vae_out)
-        self.log("val/elbo", vae_losses["elbo"])
-        self.log("val/kl_div", vae_losses["kl_div"])
-        self.log("val/nll", vae_losses["nll"])
+        self.log("val/elbo", vae_losses["elbo"], on_step=False, on_epoch=True)
+        self.log("val/kl_div", vae_losses["kl_div"], on_step=False, on_epoch=True)
+        self.log("val/nll", vae_losses["nll"], on_step=False, on_epoch=True)
 
         s_hat = self.s_decoder_forward(vae_out["s_code"])
         sd_loss = self.s_decoder_loss(batch, s_hat)
-        self.log("val/sd_loss", sd_loss)
+        self.log("val/sd_loss", sd_loss, on_step=False, on_epoch=True)
 
         if self.direct_denoiser is not None:
             s_direct = self.direct_denoiser_forward(batch)
             dd_loss = self.direct_denoiser_loss(s_hat, s_direct)
-            self.log("val/dd_loss", dd_loss)
+            self.log("val/dd_loss", dd_loss, on_step=False, on_epoch=True)
 
         if batch_idx == 0:
             idx = random.randint(0, batch.shape[0] - 1)
