@@ -97,7 +97,7 @@ class Hub(pl.LightningModule):
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, factor=0.1, patience=50
         )
-        return optimzer, scheduler
+        return optimizer, scheduler
 
     def configure_optimizers(self):
         optimizers = []
