@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 from torch.distributions import Categorical, Normal, MixtureSameFamily
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 class Rotate90(nn.Module):
@@ -108,3 +110,19 @@ class LinearUpsample(nn.Module):
         d = x.dim() - 2
         mode = self.modes[d]
         return nn.functional.interpolate(x, scale_factor=self.scale_factor, mode=mode)
+
+
+def plot_to_image(figure):
+    """Converts the matplotlib plot specified by 'figure' to a PNG image and
+    returns it. The supplied figure is closed and inaccessible after this call."""
+    canvas = figure.canvas
+    width, height = canvas.get_width_height()
+    canvas.draw()
+    image = (
+        np.frombuffer(canvas.buffer_rgba(), dtype="uint8")
+        .reshape(height, width, 4)
+        .transpose(2, 0, 1)
+    )
+    image = image / 255
+    plt.close(figure)
+    return image

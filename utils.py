@@ -132,19 +132,3 @@ def normalise(x):
     high = np.percentile(x, 99.9)
     x = (x - low) / (high - low)
     return x
-
-
-def plot_to_image(figure):
-    """Converts the matplotlib plot specified by 'figure' to a PNG image and
-    returns it. The supplied figure is closed and inaccessible after this call."""
-    canvas = figure.canvas
-    width, height = canvas.get_width_height()
-    canvas.draw()
-    image = (
-        np.frombuffer(canvas.buffer_rgba(), dtype="uint8")
-        .reshape(height, width, 4)
-        .transpose(2, 0, 1)
-    )
-    image = image / 255
-    plt.close(figure)
-    return image
