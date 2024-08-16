@@ -1,3 +1,27 @@
+"""
+MIT License
+
+Copyright (c) 2019 Andrea Dittadi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -11,8 +35,8 @@ class Conv(nn.Module):
     """
     Convolutional layer for 1, 2, or 3D data.
 
-    Parameters of are initialised by passing a n-dimensional
-    tensor of shape (N, C, *dims) through the layer.
+    Same arugments as nn.Convxd but dimensionality of data is
+    passed as argument.
     """
 
     def __init__(
@@ -116,6 +140,8 @@ class ResBlockWithResampling(nn.Module):
         resample (str): Resampling method. Can be "up", "down", or None.
         res_block_kernel (int): Kernel size for the residual block.
         groups (int): Number of groups for grouped convolution.
+        gated (bool): Whether to use gated activation.
+        dimensions (int): Dimensionality of the data (1, 2 or 3).
 
     Attributes:
         pre_conv (nn.Module): Pre-convolutional layer.
@@ -179,6 +205,7 @@ class MergeLayer(nn.Module):
         channels (int or list[int]): The number of input channels for the convolutional layer and the residual block.
             If an integer is provided, it will be used for all three channels. If a list of integers is provided,
             it should have a length of 3, representing the number of channels for each input.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
 
     Attributes:
         layer (nn.Sequential): The sequential module that consists of a convolutional layer and a residual block.
@@ -218,6 +245,7 @@ class BottomUpLayer(nn.Module):
         n_res_blocks (int): The number of residual blocks in the layer.
         n_filters (int): The number of filters in each residual block.
         downsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
 
     Attributes:
         bu_blocks (nn.Sequential): Sequential container for the residual blocks.
@@ -265,7 +293,8 @@ class TopDownLayer(nn.Module):
         is_top_layer (bool): Whether the layer is the top layer.
         upsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
         skip (bool, optional): Whether to use a skip connection from the previous layer. Defaults to False.
-
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
+        
     Attributes:
         blocks (nn.Sequential): Sequential container for the residual blocks.
         merge (MergeLayer): Merge layer for combining the bottom-up and top-down paths.
@@ -348,6 +377,8 @@ class NormalStochasticBlock(nn.Module):
         c_out (int): Number of output channels.
         kernel (int): Kernel size for the convolutional layers.
         transform_p_params (bool): Whether to double the channels of p(z) with a convolutional layer.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
+
     """
 
     def __init__(self, c_in, c_vars, c_out, kernel=3, transform_p_params=True, dimensions=2):
@@ -471,6 +502,7 @@ class VAETopDownLayer(nn.Module):
         stochastic_skip (bool): Whether to include a skip connection around the stochastic layer.
         learn_top_prior (bool): Whether to learn the parameters of the top prior.
         top_prior_param_size (int): Spatial size of the top prior parameters.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
 
     def __init__(
@@ -613,6 +645,7 @@ class ShiftedConv(nn.Module):
         dilation (int, optional): Dilation rate of the convolutional kernel. Default is 1.
         groups (int, optional): Number of groups for grouped convolution. Default is 1.
         first (bool, optional): Whether this is the first layer in the network. Default is False.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
 
     def __init__(
@@ -674,7 +707,9 @@ class PixelCNNBlock(nn.Module):
         kernel_size (int): Size of the convolutional kernel.
         dilation (int, optional): Dilation rate of the convolutional kernel. Default is 1.
         groups (int, optional): Number of groups for grouped convolution. Default is 1.
-        first (bool, optional): Whether this is the first layer in the network. Default is False.
+        first (bool, optional): Whether this is the first layer in the network so should mask centre pixel. Default is False.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
+
     """
 
     def __init__(
@@ -752,6 +787,7 @@ class PixelCNNLayers(nn.Module):
         n_layers (int): Number of layers in the PixelCNN.
         direction (str): Axis along which noise is correlated. Default is 'x'.
         checkpointed (bool): Whether to use activation checkpointing in the forward pass.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
 
     def __init__(

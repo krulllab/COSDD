@@ -14,6 +14,7 @@ class SDecoder(nn.Module):
         n_layers (int): Number of layers in the network.
         kernel_size (int): Size of the convolutional kernel.
         checkpointed (bool): Whether to use activation checkpointing in the forward pass.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
 
     def __init__(

@@ -22,7 +22,9 @@ class PixelCNN(nn.Module):
         n_filters (int): Number of filters in the convolutional layers.
         n_layers (int): Number of layers.
         n_gaussians (int): Number of gaussians in the predictive mixture model.
+        gated (int): Whether to use gated activations (A. Oord 2016).
         checkpointed (bool): Whether to use activation checkpointing in the forward pass.
+        dimensions (int): Dimensionality of the data (1, 2 or 3)
 
     """
 
