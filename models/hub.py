@@ -200,12 +200,12 @@ class Hub(pl.LightningModule):
             # Make 1D plots
             for i in range(batch.size(1)):
                 figure = plt.figure()
-                plt.plot(batch[0, i].cpu().half(), label="Noisy", color="blue")
+                plt.plot(batch[0, i].cpu().float(), label="Noisy", color="blue")
                 for j in range(samples.size(0)):
-                    plt.plot(samples[j][i].cpu().half(), color="orange", alpha=0.5)
-                plt.plot(mmse[0, i].cpu().half(), label="Denoised", color="orange")
+                    plt.plot(samples[j][i].cpu().float(), color="orange", alpha=0.5)
+                plt.plot(mmse[0, i].cpu().float(), label="Denoised", color="orange")
                 if direct is not None:
-                    plt.plot(direct[0, i].cpu().half(), label="Direct", color="green")
+                    plt.plot(direct[0, i].cpu().float(), label="Direct", color="green")
                 plt.legend()
                 img = plot_to_image(figure)
                 self.log_image(img, f"channel_{i}")
@@ -219,12 +219,12 @@ class Hub(pl.LightningModule):
                 if direct is not None:
                     direct = direct[:, :, 0]    
             # Show 2D images
-            self.log_image(batch[0].cpu().half().numpy(), "inputs/noisy")
-            self.log_image(samples[0].cpu().half().numpy(), "outputs/sample 1")
-            self.log_image(samples[1].cpu().half().numpy(), "outputs/sample 2")
-            self.log_image(mmse[0].cpu().half().numpy(), "outputs/mmse (10 samples)")
+            self.log_image(batch[0].cpu().float().numpy(), "inputs/noisy")
+            self.log_image(samples[0].cpu().float().numpy(), "outputs/sample 1")
+            self.log_image(samples[1].cpu().float().numpy(), "outputs/sample 2")
+            self.log_image(mmse[0].cpu().float().numpy(), "outputs/mmse (10 samples)")
             if direct is not None:
-                self.log_image(direct[0].cpu().half().numpy(), "outputs/direct estimate")
+                self.log_image(direct[0].cpu().float().numpy(), "outputs/direct estimate")
 
     def validation_step(self, batch, batch_idx):
         x = (batch - self.data_mean) / self.data_std
