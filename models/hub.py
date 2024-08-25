@@ -250,6 +250,8 @@ class Hub(pl.LightningModule):
             mmse = torch.mean(s_hat, 0, keepdim=True)
             if self.direct_denoiser is not None:
                 s_direct = self.direct_denoiser_forward(x[idx : idx + 1])
+            else:
+                s_direct = None
             self.log_val_images(x[idx : idx + 1], s_hat, mmse, s_direct)
 
     def predict_step(self, batch, _):
