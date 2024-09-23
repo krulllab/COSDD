@@ -3,54 +3,38 @@ import torch.nn.functional as F
 
 
 class SDecoder(nn.Module):
-    """ Simple network for predicting noisy image from the signal code.
-    Args:
-        colour_channels (int): Number of colour channels in the target image.
-        s_code_channels (int): Number of channels in the input signal code.
-        n_filters (int): Number of filters in the convolutional layers.
-        n_layers (int): Number of layers in the network.
-        kernel_size (int): Size of the convolutional kernel.
-    """
 
-    def __init__(
-        self, colour_channels, s_code_channels, n_filters=64, n_layers=4, kernel_size=3
-    ):
+    def __init__(self,
+                 colour_channels,
+                 s_code_channels,
+                 n_filters=64,
+                 n_layers=4,
+                 kernel_size=3):
         super().__init__()
         if n_layers < 2:
-            raise ValueError("n_layers must be greater than 2")
+            raise ValueError('n_layers must be greater than 2')
 
         modules = [
-            nn.Conv2d(
-                s_code_channels,
-                n_filters,
-                kernel_size,
-                padding=kernel_size // 2,
-                padding_mode="reflect",
-            ),
-            nn.ReLU(),
+            nn.Conv2d(s_code_channels,
+                      n_filters,
+                      kernel_size,
+                      padding=kernel_size // 2,
+                      padding_mode='reflect'),
+            nn.ReLU()
+        ] + [
+            nn.Conv2d(n_filters,
+                      n_filters,
+                      kernel_size,
+                      padding=kernel_size // 2,
+                      padding_mode="reflect"),
+            nn.ReLU()
+        ] * (n_layers - 2) + [
+            nn.Conv2d(n_filters,
+                      colour_channels,
+                      kernel_size,
+                      padding=kernel_size // 2,
+                      padding_mode="reflect")
         ]
-        for _ in range(n_layers - 2):
-            modules.extend(
-                [
-                    nn.Conv2d(
-                        n_filters,
-                        n_filters,
-                        kernel_size,
-                        padding=kernel_size // 2,
-                        padding_mode="reflect",
-                    ),
-                    nn.ReLU(),
-                ]
-            )
-        modules.append(
-            nn.Conv2d(
-                n_filters,
-                colour_channels,
-                kernel_size,
-                padding=kernel_size // 2,
-                padding_mode="reflect",
-            )
-        )
 
         self.net = nn.Sequential(*modules)
 

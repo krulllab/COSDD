@@ -110,3 +110,21 @@ class Layers(nn.Module):
         for layer in self.layers:
             x, s_code = layer(x, s_code)
         return x
+
+
+class OutConvs(nn.Module):
+
+    def __init__(self, in_channels, out_channels, n_layers):
+        super().__init__()
+
+        convs = []
+        for i in range(n_layers):
+            c_out = in_channels if i < (n_layers - 1) else out_channels
+            convs.append(
+                nn.Conv2d(in_channels=in_channels,
+                          out_channels=c_out,
+                          kernel_size=1))
+        self.convs = nn.Sequential(*convs)
+
+    def forward(self, x):
+        return self.convs(x)

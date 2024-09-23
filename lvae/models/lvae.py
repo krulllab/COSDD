@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 from torch import nn
+from torch import optim
+from pytorch_lightning import LightningModule
 from ..lib.utils import crop_img_tensor, pad_img_tensor
 from .lvae_layers import (
     TopDownLayer,
@@ -11,37 +13,39 @@ from .lvae_layers import (
 
 
 class LadderVAE(nn.Module):
-    """
-    Ladder Variational Autoencoder (LVAE) model.
+    """Hierarchical variational autoencoder.
 
-    Args:
-        colour_channels (int): Number of input image channels.
-        img_shape (tuple): Shape of the input image (height, width).
-        s_code_channels (int): Number of channels in the returned latent code.
-        z_dims (list, optional): List of dimensions for the latent variables z.
-            If not provided, default value of [32] * 12 will be used.
-        blocks_per_layer (int, optional): Number of residual blocks per layer.
-            Default: 1.
-        n_filters (int, optional): Number of filters in the convolutional layers.
-            Default: 64.
-        learn_top_prior (bool, optional): Whether to learn the top prior.
-            Default: True.
-        res_block_type (str, optional): Type of residual block. Default: "bacbac".
-        merge_type (str, optional): Type of merge operation in the top-down layer.
-            Default: "residual".
-        stochastic_skip (bool, optional): Whether to use stochastic skip connections.
-            Default: True.
-        gated (bool, optional): Whether to use gated activations in the layers.
-            Default: True.
-        batchnorm (bool, optional): Whether to use batch normalization in the layers.
-            Default: True.
-        downsampling (list, optional): List of downsampling steps per layer.
-            If not provided, default value of [0] * n_layers will be used.
-        mode_pred (bool, optional): Whether to predict the mode of the distribution.
-            Default: False.
-    """
-class LadderVAE(nn.Module):
-
+    Parameters
+    ----------
+    colour_channels : int
+        Number of colour channels in input.
+    img_shape : tuple
+        Spatial dimensions of the input (Height, Width)
+    s_code_channels : int
+        Numer of channels in latent code.
+    z_dims : list
+        Number of feature channels at each layer of the hierarchy.
+    blocks_per_layer : int
+        Number of residual blocks between each latent.
+    n_filters : int
+        Numer of feature channels.
+    learn_top_prior : bool
+        Whether to learn the parameters of topmost prior.
+    res_block_type : string
+        The ordering of operations within each block. See ..lib.nn.ResidualBlock
+    merge_type : string
+        How features from bottom-up pass will be merged with features from top-down pass. See .lvae_layers.MergeLayer
+    stochastic_skip : bool
+        Whether to use skip connections from previous layer of hierarchy.
+    gated : bool
+        Whether to uses forget gate activation.
+    batchnorm : bool
+        Use of batch normalisation.
+    downsample : list
+        Number of times to downsample for each latent variable.
+    mode_pred : bool
+        If false, losses will not be calculated.
+    """    
 
     def __init__(
         self,
@@ -71,6 +75,10 @@ class LadderVAE(nn.Module):
         self.stochastic_skip = stochastic_skip
         self.gated = gated
         self.mode_pred = mode_pred
+
+        # We need to optimize the s_decoder separately
+        # from the main VAE and noise_model
+        self.automatic_optimization = False
 
         # Number of downsampling steps per layer
         if downsampling is None:
@@ -273,8 +281,10 @@ class LadderVAE(nn.Module):
         # Spatial size of image is given by self.img_shape
         out, _ = self.topdown_pass(n_img_prior=n_images)
         generated_s_code = crop_img_tensor(out, self.img_shape)
+        generated_s = self.s_decoder(generated_s_code)
+        generated_x = self.noise_model.sample(generated_s_code)
 
-        return generated_s_code
+        return generated_s, generated_x
 
     def pad_input(self, x):
         """
