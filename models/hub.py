@@ -43,7 +43,7 @@ class Hub(pl.LightningModule):
         n_grad_batches=1,
         checkpointed=True,
     ):
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["vae", "ar_decoder", "s_decoder", "direct_denoiser"])
 
         super().__init__()
         self.vae = vae
@@ -195,20 +195,21 @@ class Hub(pl.LightningModule):
         )
 
     def log_val_images(self, batch, samples, mmse, direct):
+        n_channels = batch.shape[1]
         d = batch.ndim - 2
         if d == 1:
             # Make 1D plots
-            for i in range(batch.size(1)):
+            for ch in range(n_channels):
                 figure = plt.figure()
-                plt.plot(batch[0, i].cpu().float(), label="Noisy", color="blue")
+                plt.plot(batch[0, ch].cpu().float(), label="Noisy", color="blue")
                 for j in range(samples.size(0)):
-                    plt.plot(samples[j][i].cpu().float(), color="orange", alpha=0.5)
-                plt.plot(mmse[0, i].cpu().float(), label="Denoised", color="orange")
+                    plt.plot(samples[j][ch].cpu().float(), color="orange", alpha=0.5)
+                plt.plot(mmse[0, ch].cpu().float(), label="Denoised", color="orange")
                 if direct is not None:
-                    plt.plot(direct[0, i].cpu().float(), label="Direct", color="green")
+                    plt.plot(direct[0, ch].cpu().float(), label="Direct", color="green")
                 plt.legend()
                 img = plot_to_image(figure)
-                self.log_image(img, f"channel_{i}")
+                self.log_image(img, f"channel_{ch}")
                 plt.close(figure)
         else:
             if d == 3:
@@ -218,13 +219,13 @@ class Hub(pl.LightningModule):
                 mmse = mmse[:, :, 0]
                 if direct is not None:
                     direct = direct[:, :, 0]    
-            # Show 2D images
-            self.log_image(batch[0].cpu().float().numpy(), "inputs/noisy")
-            self.log_image(samples[0].cpu().float().numpy(), "outputs/sample 1")
-            self.log_image(samples[1].cpu().float().numpy(), "outputs/sample 2")
-            self.log_image(mmse[0].cpu().float().numpy(), "outputs/mmse (10 samples)")
+            # Show 2D images. Only shows first 3 channels
+            self.log_image(batch[0, :3].cpu().float().numpy(), "inputs/noisy")
+            self.log_image(samples[0, :3].cpu().float().numpy(), "outputs/sample 1")
+            self.log_image(samples[1, :3].cpu().float().numpy(), "outputs/sample 2")
+            self.log_image(mmse[0, :3].cpu().float().numpy(), "outputs/mmse (10 samples)")
             if direct is not None:
-                self.log_image(direct[0].cpu().float().numpy(), "outputs/direct estimate")
+                self.log_image(direct[0, :3].cpu().float().numpy(), "outputs/direct estimate")
 
     def validation_step(self, batch, batch_idx):
         x = (batch - self.data_mean) / self.data_std
