@@ -1,9 +1,11 @@
 import random
+from pathlib import Path
+from typing import Callable, Literal
 
 import torch
 import numpy as np
 from sklearn.linear_model import LinearRegression
-import matplotlib.pyplot as plt
+from skimage import io
 
 
 def patchify(x, patch_size):
@@ -132,3 +134,143 @@ def normalise(x):
     high = np.percentile(x, 99.9)
     x = (x - low) / (high - low)
     return x
+
+
+def fix_axes(images, axes, n_dimensions):
+    spatial_axes = [d for d in "TZYX" if d in axes]
+    spatial_axes = spatial_axes[-n_dimensions:]
+    sample_axes = [d for d in "STZYXC" if d in axes and d not in spatial_axes]
+    target_axes = sample_axes + spatial_axes
+    target_transpose = [axes.index(d) for d in target_axes]
+    images = [i.transpose(target_transpose) for i in images]
+    if "C" not in axes:
+        images = [np.expand_dims(i, -n_dimensions - 1) for i in images]
+    images = [i.reshape(-1, i.shape[-n_dimensions - 1], *i.shape[-n_dimensions:]) for i in images]
+    return images
+
+
+"""
+BSD 3-Clause License
+
+Copyright (c) 2018-2024, Uwe Schmidt, Martin Weigert
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"""
+
+from collections import deque
+
+def consume(iterator):
+    deque(iterator, maxlen=0)
+
+
+def _raise(e):
+    if isinstance(e, BaseException):
+        raise e
+    else:
+        raise ValueError(e)
+
+
+def axes_check_and_normalize(axes, n_dimensions):
+    """
+    S(ample), T(ime), C(hannel), Z, Y, X
+    """
+    allowed = "STCZYX"
+    axes is not None or _raise(ValueError("axis cannot be None."))
+    axes = str(axes).upper()
+    consume(
+        a in allowed
+        or _raise(
+            ValueError("invalid axis '%s', must be one of %s." % (a, list(allowed)))
+        )
+        for a in axes
+    )
+    consume(
+        axes.count(a) == 1 or _raise(ValueError("axis '%s' occurs more than once." % a))
+        for a in axes
+    )
+    matches_n_dimensions = sum([a in "TZYX" for a in axes]) >= n_dimensions
+    if not matches_n_dimensions:
+        raise ValueError(
+            f"Images have fewer than {n_dimensions} spatial or temporal dimensions"
+        )
+    return axes
+
+
+def load_data(
+    paths: str | list,
+    patterns: str | list = "*.tif",
+    axes: str = "SYX",
+    n_dimensions: Literal[1, 2, 3] = 2,
+    imread_fn: Callable[[str], np.ndarray] = None,
+    dtype: torch.dtype = torch.float32,
+):
+    """Loads data from folders.
+
+    Args:
+        paths (str | list): Directories containing subdirectories with image files.
+        patterns (str | list): Glob-style pattern to match images.
+        axes (str): Semantics of axes of images as they are stored (assumed to be the same for all images).
+        n_dimensions (int): Desired spatial dimensions of images once loaded (1, 2 or 3). Eg can be used to treat T(ime) as a spatial or sample dimension.
+        imread_fn (function): Function used to read images. Should return a numpy ndarray. Default works for common file types.
+        dtype (np.dtype): Desired data type of loaded images.
+    Returns:
+        np.ndarray: The image data.
+    """
+    if imread_fn is None:
+        imread_fn = io.imread
+    if not isinstance(paths, list):
+        paths = [paths]
+    if not isinstance(patterns, list):
+        patterns = [patterns]
+    isinstance(n_dimensions, int) or _raise(
+        TypeError(f"n_dimensions must be int but is {type(n_dimensions)}")
+    )
+    1 <= n_dimensions <= 3 or _raise(
+        ValueError(f"n_dimensions must be 1, 2 or 3 but is {n_dimensions}")
+    )
+    axes = axes_check_and_normalize(axes, n_dimensions)
+    files = []
+    for path in paths:
+        path = Path(path)
+        path.exists() or _raise(FileNotFoundError(f'"{path}" does not exist'))
+        if path.is_file():
+            raise NotADirectoryError(
+                f"{path} is a file. Use `patterns` to set file names."
+            )
+        for pattern in patterns:
+            files.extend(list(path.glob(pattern)))
+    len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
+    images = [imread_fn(f) for f in files]
+    for i in images:
+        if i.shape != images[0].shape:
+            _raise(ValueError(f"Images do not all have the same shape ({i.shape} and {images[0].shape})"))
+    images[0].ndim == len(axes) or _raise(
+        ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
+    )
+    images = fix_axes(images, axes, n_dimensions)
+    images = np.concatenate(images, 0)
+    return torch.from_numpy(images).to(dtype)
