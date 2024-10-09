@@ -30,6 +30,9 @@ class Hub(pl.LightningModule):
         weights.
     checkpointed : bool, optional
         Whether to use activation checkpointing in the forward pass.
+    clip_min_max : list, optional
+        Clips pixel intensities to be within these values. Useful if training
+        crashes due to NaNs.
     """
 
     def __init__(
@@ -42,8 +45,11 @@ class Hub(pl.LightningModule):
         data_std=1,
         n_grad_batches=1,
         checkpointed=True,
+        clip_min_max=None,
     ):
-        self.save_hyperparameters(ignore=["vae", "ar_decoder", "s_decoder", "direct_denoiser"])
+        self.save_hyperparameters(
+            ignore=["vae", "ar_decoder", "s_decoder", "direct_denoiser"]
+        )
 
         super().__init__()
         self.vae = vae
@@ -53,7 +59,8 @@ class Hub(pl.LightningModule):
         self.data_mean = data_mean
         self.data_std = data_std
         self.n_grad_batches = n_grad_batches
-        
+        self.clip_min_max = clip_min_max
+
         if hasattr(vae, "checkpointed"):
             vae.checkpointed = checkpointed
         if hasattr(ar_decoder, "checkpointed"):
@@ -69,6 +76,10 @@ class Hub(pl.LightningModule):
         self.direct_pred = False  # Whether to use direct denoiser for prediction
 
     def vae_forward(self, x):
+        if self.clip_min_max is not None:
+            x = torch.clamp(
+                x, min=self.clip_min_max[0], max=self.clip_min_max[1]
+            )
         vae_out = self.vae(x)
         s_code = vae_out["s_code"]
 
@@ -86,6 +97,10 @@ class Hub(pl.LightningModule):
         return s_hat
 
     def direct_denoiser_forward(self, x):
+        if self.clip_min_max is not None:
+            x = torch.clamp(
+                x, min=self.clip_min_max[0], max=self.clip_min_max[1]
+            )
         s_direct = self.direct_denoiser(x)
         return s_direct
 
@@ -117,28 +132,28 @@ class Hub(pl.LightningModule):
             schedulers.append(dd_scheduler)
 
         return optimizers, schedulers
-    
+
     def vae_loss(self, x, out):
+        if self.clip_min_max is not None:
+            x = torch.clamp(
+                x, min=self.clip_min_max[0], max=self.clip_min_max[1]
+            )
         losses = {}
         kl_div = self.vae.kl_divergence(out["q_list"], out["p_list"])
         kl_div = kl_div / x.numel()
-        nll = -self.ar_decoder.loglikelihood(
-            x, out["x_params"]
-        ).mean()
+        nll = -self.ar_decoder.loglikelihood(x, out["x_params"]).mean()
         elbo = kl_div + nll
         losses["elbo"] = elbo
         losses["kl_div"] = kl_div
         losses["nll"] = nll
         return losses
-        
+
     def s_decoder_loss(self, x, s_hat):
         sd_loss = self.s_decoder.loss(x, s_hat).mean()
         return sd_loss
 
     def direct_denoiser_loss(self, s_hat, s_direct):
-        dd_loss = self.direct_denoiser.loss(
-            s_hat.detach(), s_direct
-        ).mean()
+        dd_loss = self.direct_denoiser.loss(s_hat.detach(), s_direct).mean()
         return dd_loss
 
     def training_step(self, batch, batch_idx):
@@ -181,7 +196,7 @@ class Hub(pl.LightningModule):
         sd_scheduler = schedulers[1]
         sd_scheduler.step(self.trainer.callback_metrics["val/sd_loss"])
 
-        if self.direct_denoiser is not None:# and self.current_epoch > 50:
+        if self.direct_denoiser is not None:  # and self.current_epoch > 50:
             dd_scheduler = schedulers[2]
             dd_scheduler.step(self.trainer.callback_metrics["val/dd_loss"])
 
@@ -218,14 +233,18 @@ class Hub(pl.LightningModule):
                 samples = samples[:, :, 0]
                 mmse = mmse[:, :, 0]
                 if direct is not None:
-                    direct = direct[:, :, 0]    
+                    direct = direct[:, :, 0]
             # Show 2D images. Only shows first 3 channels
             self.log_image(batch[0, :3].cpu().float().numpy(), "inputs/noisy")
             self.log_image(samples[0, :3].cpu().float().numpy(), "outputs/sample 1")
             self.log_image(samples[1, :3].cpu().float().numpy(), "outputs/sample 2")
-            self.log_image(mmse[0, :3].cpu().float().numpy(), "outputs/mmse (10 samples)")
+            self.log_image(
+                mmse[0, :3].cpu().float().numpy(), "outputs/mmse (10 samples)"
+            )
             if direct is not None:
-                self.log_image(direct[0, :3].cpu().float().numpy(), "outputs/direct estimate")
+                self.log_image(
+                    direct[0, :3].cpu().float().numpy(), "outputs/direct estimate"
+                )
 
     def validation_step(self, batch, batch_idx):
         x = (batch - self.data_mean) / self.data_std
@@ -262,7 +281,9 @@ class Hub(pl.LightningModule):
             if self.direct_denoiser is not None:
                 s_hat = self.direct_denoiser(x)
             else:
-                print("Direct denoiser not trained. Set use_direct_denoiser in training script to True.")
+                print(
+                    "Direct denoiser not trained. Set use_direct_denoiser in training script to True."
+                )
                 return
         else:
             vae_out = self.vae(x)
