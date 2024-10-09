@@ -1,0 +1,7 @@
+data:
+  paths: ["/home/ben/data/convallaria_struc"]
+  patterns: "low_snr.tif"
+  axes: "SYX"
+hyper-parameters:
+  s-code-channels: 128
+model-name: "conv-struc-test"
