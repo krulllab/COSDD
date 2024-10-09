@@ -42,7 +42,7 @@ class UNet(nn.Module):
         gated (bool): Whether to use gated activations in the residual blocks.
         batchnorm (bool): Whether to use batch normalization in the residual blocks.
         downsampling (list): Number of downsampling steps per layer.
-        loss_fn (str): Loss function to use. Default: 'L2'.
+        loss_fn (str): Loss function to use. Default: 'MSE'.
         checkpointed (bool): Whether to use activation checkpointing in the forward pass.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
@@ -55,7 +55,7 @@ class UNet(nn.Module):
         n_layers=14,
         td_skip=True,
         downsampling=None,
-        loss_fn="L2",
+        loss_fn="MSE",
         checkpointed=False,
         dimensions=2,
     ):
@@ -194,5 +194,5 @@ class UNet(nn.Module):
     def loss(self, x, y):
         if self.loss_fn == "L1":
             return F.l1_loss(x, y, reduction="none")
-        elif self.loss_fn == "L2":
+        elif self.loss_fn == "MSE":
             return F.mse_loss(x, y, reduction="none")
