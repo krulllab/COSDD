@@ -1,0 +1,14 @@
+model-name: "my_denoiser"
+data:
+  save-path: "data"
+  paths: "data"
+  patterns: "*.tif"
+  axes: "SYX"
+  number-dimensions: 2
+  patch-size: None
+  clip-outliers: False
+predict-parameters:
+  batch-size: 1
+memory:
+  precision: "bf16-mixed"
+  gpu: [0]

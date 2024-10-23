@@ -64,6 +64,8 @@ class UNet(nn.Module):
         self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
         self.td_skip = td_skip
+        if loss_fn not in ("MSE", "L1"):
+            raise ValueError("UNet loss_fn should be either 'L1' or 'MSE'")
         self.loss_fn = loss_fn
         self.checkpointed = checkpointed
 

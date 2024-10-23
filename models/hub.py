@@ -56,8 +56,8 @@ class Hub(pl.LightningModule):
         self.ar_decoder = ar_decoder
         self.s_decoder = s_decoder
         self.direct_denoiser = direct_denoiser
-        self.data_mean = data_mean
-        self.data_std = data_std
+        self.register_buffer("data_mean", data_mean)
+        self.register_buffer("data_std", data_std)
         self.n_grad_batches = n_grad_batches
         self.clip_min_max = clip_min_max
 
@@ -107,7 +107,7 @@ class Hub(pl.LightningModule):
     def get_optimizer_scheduler(self, params):
         optimizer = optim.Adamax(params)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=0.1, patience=50
+            optimizer, factor=0.1, patience=25
         )
         return optimizer, scheduler
 

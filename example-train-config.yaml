@@ -1,0 +1,28 @@
+model-name: "my_denoiser"
+data:
+  paths: "data"
+  patterns: "*.tif"
+  axes: "SYX"
+  number-dimensions: 2
+  patch-size: None
+  clip-outliers: False
+train-parameters:
+  max-time: "00:06:00:00"
+  max-epochs: 1000
+  patience: 50
+  batch-size: 4
+  number-grad-batches: 4
+  crop-size: [256 256]
+  training-split: 0.9
+  monte-carlo-kl: False
+  use-direct-denoiser: True
+  direct-denoiser-loss: "MSE"
+hyper-parameters:
+  noise-direction: "x"
+  s-code-channels: 64
+  number-layers: 14
+  number-gaussians: 3
+memory:
+  precision: "bf16-mixed"
+  checkpointed: True
+  gpu: [0]

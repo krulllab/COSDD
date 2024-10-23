@@ -34,8 +34,11 @@ def patchify(x, patch_size):
 
     for i in range(dimensions):
         x = x.unfold(i + 2, patch_size[i], patch_size[i])
+    print(x.shape)
     first_dims = [0] + [i + 2 for i in range(dimensions)]
+    print(first_dims)
     remaining_dims = [1] + [i + dimensions + 2 for i in range(dimensions)]
+    print(remaining_dims)
     new_dims = first_dims + remaining_dims
     x = x.permute(new_dims).contiguous()
     x = x.flatten(0, dimensions)
@@ -113,7 +116,6 @@ class TrainDataset(torch.utils.data.Dataset):
 
 
 class PredictDataset(torch.utils.data.Dataset):
-
     def __init__(self, images):
         self.images = images
 
@@ -142,37 +144,62 @@ def normalise(x):
     return x
 
 
-def get_defaults(config_dict):
-    defaults = {
-        "data": {
-            "paths": None,
-            "patterns": None,
-            "axes": None,
-            "number-dimensions": 2,
-            "patch-size": None,
-            "clip-outliers": False,
-        },
-        "train-params": {
-            "batch-size": 4,
-            "number-grad-batches": 4,
-            "crop-size": (256, 256),
-            "training-split": 0.9,
-            "max-epochs": 1000,
-            "patience": 100,
-        },
-        "hyper-parameters": {
-            "s-code-channels": 64,
-            "number-layers": 14,
-            "number-gaussians": 3,
-            "noise-direction": "x",
-            "direct-denoiser-loss": "MSE",
-        },
-        "use-direct-denoiser": True,
-        "model-name": None,
-        "precision": "bf16-mixed",
-        "checkpointed": True,
-        "gpus": [0],
-    }
+def get_defaults(config_dict, predict=False):
+    if not predict:
+        defaults = {
+            "model-name": None,
+            "data": {
+                "paths": None,
+                "patterns": None,
+                "axes": None,
+                "number-dimensions": 2,
+                "patch-size": None,
+                "clip-outliers": False,
+            },
+            "train-parameters": {
+                "batch-size": 4,
+                "number-grad-batches": 4,
+                "crop-size": [256, 256],
+                "training-split": 0.9,
+                "max-epochs": 1000,
+                "max-time": None,
+                "patience": 100,
+                "monte-carlo-kl": False,
+                "use-direct-denoiser": True,
+                "direct-denoiser-loss": "MSE",
+            },
+            "hyper-parameters": {
+                "s-code-channels": 64,
+                "number-layers": 14,
+                "number-gaussians": 3,
+                "noise-direction": "x",
+            },
+            "memory": {
+                "precision": "bf16-mixed",
+                "checkpointed": True,
+                "gpu": [0],
+            },
+        }
+    else:
+        defaults = {
+            "model-name": None,
+            "data": {
+                "paths": None,
+                "patterns": None,
+                "axes": None,
+                "number-dimensions": 2,
+                "patch-size": None,
+                "clip-outliers": False,
+            },
+            "predict-parameters": {
+                "batch-size": 1,
+            },
+            "memory": {
+                "precision": "bf16-mixed",
+                "gpu": [0],
+            },
+        }
+
     for config in defaults:
         if config not in config_dict.keys():
             config_dict[config] = defaults[config]
@@ -202,6 +229,11 @@ def fix_axes(images, axes, n_dimensions):
 
 
 def get_imread_fn(file_type):
+    """Selects the function that will be used to load the data
+    
+    Edit this function to load file types that are not supported.
+    The function should return a numpy array. 
+    """
     if file_type in (".png", ".tif", ".tiff"):
         from skimage import io
 
