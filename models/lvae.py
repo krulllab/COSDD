@@ -58,6 +58,7 @@ class LadderVAE(nn.Module):
         blocks_per_layer=1,
         n_filters=64,
         learn_top_prior=True,
+        monte_carlo_kl=False,
         stochastic_skip=True,
         downsampling=None,
         checkpointed=False,
@@ -71,6 +72,7 @@ class LadderVAE(nn.Module):
         self.n_layers = len(self.z_dims)
         self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
+        self.monte_carlo_kl = monte_carlo_kl
         self.stochastic_skip = stochastic_skip
         self.checkpointed = checkpointed
 
@@ -270,9 +272,13 @@ class LadderVAE(nn.Module):
 
         return generated_s_code
 
-    @staticmethod
-    def kl_divergence(q_list, p_list):
+    def kl_divergence(self, q_list, p_list):
         kl_sum = 0
-        for q, p in zip(q_list, p_list):
-            kl_sum = kl_sum + kl_divergence(q, p).sum()
+        if self.monte_carlo_kl:
+            for q, p in zip(q_list, p_list):
+                z = q.rsample()
+                kl_sum = kl_sum + (q.log_prob(z).sum() - p.log_prob(z).sum())
+        else:
+            for q, p in zip(q_list, p_list):
+                kl_sum = kl_sum + kl_divergence(q, p).sum()
         return kl_sum
