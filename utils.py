@@ -34,11 +34,8 @@ def patchify(x, patch_size):
 
     for i in range(dimensions):
         x = x.unfold(i + 2, patch_size[i], patch_size[i])
-    print(x.shape)
     first_dims = [0] + [i + 2 for i in range(dimensions)]
-    print(first_dims)
     remaining_dims = [1] + [i + dimensions + 2 for i in range(dimensions)]
-    print(remaining_dims)
     new_dims = first_dims + remaining_dims
     x = x.permute(new_dims).contiguous()
     x = x.flatten(0, dimensions)
@@ -162,8 +159,8 @@ def get_defaults(config_dict, predict=False):
                 "crop-size": [256, 256],
                 "training-split": 0.9,
                 "max-epochs": 1000,
-                "max-time": None,
-                "patience": 100,
+                "max-time": "00:06:00:00",
+                "patience": 50,
                 "monte-carlo-kl": False,
                 "use-direct-denoiser": True,
                 "direct-denoiser-loss": "MSE",
@@ -242,6 +239,8 @@ def get_imread_fn(file_type):
         import czifile
 
         imread_fn = czifile.imread
+    elif file_type == ".npy":
+        imread_fn = np.load
     else:
         raise Exception(f"Unsupported file type: {file_type}")
     return imread_fn

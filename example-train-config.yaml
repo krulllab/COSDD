@@ -12,7 +12,7 @@ train-parameters:
   patience: 50
   batch-size: 4
   number-grad-batches: 4
-  crop-size: [256 256]
+  crop-size: [256, 256]
   training-split: 0.9
   monte-carlo-kl: False
   use-direct-denoiser: True
