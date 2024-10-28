@@ -42,7 +42,8 @@ class PixelCNN(nn.Module):
         dimensions=2,
     ):
         super().__init__()
-        assert noise_direction in ("x", "y", "z")
+        noise_direction = noise_direction.lower()
+        assert noise_direction in ("t", "x", "y", "z")
         self.n_gaussians = n_gaussians
         self.colour_channels = colour_channels
         self.noise_direction = noise_direction

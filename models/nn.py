@@ -812,9 +812,9 @@ class PixelCNNLayers(nn.Module):
             self.layers.append(Rotate90(k=1, dims=[-2, -1]))
         elif direction == "z":
             self.layers.append(Rotate90(k=1, dims=[-3, -1]))
-        elif direction != "x":
+        elif direction not in ("x", "t"):
             raise ValueError(
-                f"Direction {direction} not supported. Use 'x', 'y' or 'z'."
+                f"Direction {direction} not supported. Use 't', 'x', 'y' or 'z'."
             )
 
         groups = colour_channels
