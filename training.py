@@ -30,6 +30,7 @@ with open(args.config_file) as f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
 cfg = utils.get_defaults(cfg)
 
+print("Loading data...")
 low_snr = utils.load_data(
     cfg["data"]["paths"],
     cfg["data"]["patterns"],
@@ -56,11 +57,11 @@ if math.floor((val_split) * len(low_snr)) == 0:
 print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
+    print("Clippping min...")
     clip_min = np.percentile(low_snr, 1)
+    print("Clippping max...")
     clip_max = np.percentile(low_snr, 99)
-    clip_min_max = (clip_min, clip_max)
-else:
-    clip_min_max = None
+    low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
 print(
     f"Effective batch size: {cfg["train-parameters"]["batch-size"] * cfg["train-parameters"]["number-grad-batches"]}"
@@ -147,6 +148,7 @@ if cfg["train-parameters"]["use-direct-denoiser"]:
 else:
     direct_denoiser = None
 
+# Each channel is normalised individually
 mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
 data_mean = low_snr.mean(mean_std_dims, keepdims=True)
 data_std = low_snr.std(mean_std_dims, keepdims=True)
@@ -159,7 +161,6 @@ hub = Hub(
     data_std=data_std,
     n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
     checkpointed=cfg["memory"]["checkpointed"],
-    clip_min_max=clip_min_max,
 )
 
 checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
@@ -175,7 +176,7 @@ trainer = pl.Trainer(
     max_time=cfg["train-parameters"]["max-time"],
     log_every_n_steps=len(train_set) // cfg["train-parameters"]["batch-size"],
     callbacks=[
-        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="val/elbo")
+        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
     ],
     precision=cfg["memory"]["precision"],
 )
