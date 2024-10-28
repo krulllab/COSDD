@@ -147,7 +147,7 @@ if cfg["train-parameters"]["use-direct-denoiser"]:
 else:
     direct_denoiser = None
 
-mean_std_dims = [0, 2, 3] if cfg["data"]["number-dimensions"] == 2 else [0, 2, 3, 4]
+mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
 data_mean = low_snr.mean(mean_std_dims, keepdims=True)
 data_std = low_snr.std(mean_std_dims, keepdims=True)
 hub = Hub(
