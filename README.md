@@ -75,7 +75,7 @@ data:
 <details>
       <summary>patch-size</summary>
 
-      (list(int) | None) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: None.
+      (list(int) | null) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: null.
       The training/validation split is made along the sample axis. If your data has only one sample, use this to break it into  patches that will be concatenated along the sample axis. 
       This is different from crop-size below, as it is deterministic and done once at the start of training.
       
@@ -98,8 +98,8 @@ train-parameters:
 <details>
       <summary>max-time</summary>
 
-      (str | None) Maximum time to train for. Default: None.
-      Must be of form "DD:HH:MM:SS", or just `None`.
+      (str | null) Maximum time to train for. Default: null.
+      Must be of form "DD:HH:MM:SS", or just `null`.
       COSDD can take a long time to converge, so use this to stop training in a reasonable time.
       
 </details>
@@ -258,7 +258,7 @@ data:
 <details>
       <summary>patch-size</summary>
 
-      (list(int) | None) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: None.
+      (list(int) | null) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: null.
       
 </details>
 <details>

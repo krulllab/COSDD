@@ -4,7 +4,7 @@ data:
   patterns: "*.tif"
   axes: "SYX"
   number-dimensions: 2
-  patch-size: None
+  patch-size: null
   clip-outliers: False
 train-parameters:
   max-time: "00:06:00:00"

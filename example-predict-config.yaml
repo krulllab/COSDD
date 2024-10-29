@@ -5,7 +5,7 @@ data:
   patterns: "*.tif"
   axes: "SYX"
   number-dimensions: 2
-  patch-size: None
+  patch-size: null
   clip-outliers: False
 predict-parameters:
   batch-size: 1
