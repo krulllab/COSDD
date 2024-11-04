@@ -4,6 +4,8 @@ import argparse
 import math
 import pickle
 import time
+import warnings
+warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 import torch
 import pytorch_lightning as pl
@@ -39,16 +41,17 @@ low_snr = utils.load_data(
     cfg["data"]["axes"],
     cfg["data"]["number-dimensions"],
 )
+original_shape = low_snr.shape
 if cfg["data"]["patch-size"] is not None:
     low_snr = utils.patchify(low_snr, patch_size=cfg["data"]["patch-size"])
 print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
+    print("Clippping min...")
     clip_min = np.percentile(low_snr, 1)
+    print("Clippping max...")
     clip_max = np.percentile(low_snr, 99)
-    clip_min_max = (clip_min, clip_max)
-else:
-    clip_min_max = None
+    low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
 predict_set = utils.PredictDataset(low_snr)
 
@@ -156,6 +159,8 @@ else:
 
     samples = torch.stack(samples, dim=1)
     denoised = torch.mean(samples, dim=1)
+if denoised.shape != original_shape:
+    denoised = utils.unpatchify(denoised, original_shape=original_shape, patch_size=cfg["data"]["patch-size"])
 
 if not os.path.exists(cfg["data"]["save-path"]):
     print(f"Creating directory: {cfg["data"]["save-path"]}")

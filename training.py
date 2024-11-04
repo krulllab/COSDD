@@ -4,7 +4,8 @@ import argparse
 import pickle
 import math
 import random
-import time
+import warnings
+warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 import torch
 import pytorch_lightning as pl
@@ -182,7 +183,6 @@ trainer = pl.Trainer(
 )
 
 trainer.fit(hub, train_loader, val_loader)
-current_time = time.strftime('%d-%m-%y-%X', time.localtime())
-trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model-{current_time}.ckpt"))
-with open(os.path.join(checkpoint_path, f"training-config-{current_time}.pkl"), "wb") as f:
+trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
+with open(os.path.join(checkpoint_path, f"training-config.pkl"), "wb") as f:
     pickle.dump(cfg, f)

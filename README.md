@@ -259,6 +259,7 @@ data:
       <summary>patch-size</summary>
 
       (list(int) | null) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: null.
+      Beware of patching data during prediction. The prediction.py script will automatically unpatch denoised images back to the original data shape, but this will result in boundary artefacts. 
       
 </details>
 <details>

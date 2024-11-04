@@ -256,6 +256,10 @@ class Hub(pl.LightningModule):
             else:
                 s_direct = None
             self.log_val_images(x[idx : idx + 1], s_hat, mmse, s_direct)
+        
+    def on_validation_epoch_end(self):
+        if self.current_epoch == 0:
+            print("To monitor losses, enter into your terminal: tensorboard --logdir checkpoints")
 
     def predict_step(self, batch, _):
         self.eval()

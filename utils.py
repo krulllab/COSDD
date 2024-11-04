@@ -26,21 +26,56 @@ def patchify(x, patch_size):
     remainders = [s % p for s, p in zip(x.shape[2:], patch_size)]
     remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
     for d in remainder_dims:
-        pad = torch.narrow(
-            x, d + 2, x.size(d + 2) - patch_size[d], patch_size[d]
-        ).contiguous()
-        x = torch.narrow(x, d + 2, 0, x.size(d + 2) - remainders[d]).contiguous()
+        pad = torch.narrow(x, d + 2, x.size(d + 2) - patch_size[d], patch_size[d])
+        x = torch.narrow(x, d + 2, 0, x.size(d + 2) - remainders[d])
         x = torch.cat([x, pad], dim=d + 2)
 
     for i in range(dimensions):
         x = x.unfold(i + 2, patch_size[i], patch_size[i])
-    first_dims = [0] + [i + 2 for i in range(dimensions)]
-    remaining_dims = [1] + [i + dimensions + 2 for i in range(dimensions)]
-    new_dims = first_dims + remaining_dims
-    x = x.permute(new_dims).contiguous()
+    x = torch.movedim(x, 1, 1 + dimensions)
     x = x.flatten(0, dimensions)
 
     return x
+
+
+def unpatchify(patches, original_shape, patch_size):
+    """
+    Reverse the patchification process and return the patched tensor to its original shape.
+
+    Args:
+        patches (torch.Tensor): Patchified tensor. Shape [S * n_patches, C, z | y | x]
+        original_shape (tuple): The original shape of the tensor before patchification [S, C, Z | Y | X]
+        patch_size (tuple): Size of each patch [z | y | x]
+
+    Returns:
+        torch.Tensor: Reconstructed tensor with shape [S, C, Z | Y | X]
+    """
+    # Original shape details
+    S, C, *original_dims = original_shape
+    dimensions = len(original_dims)
+
+    # Calculate the number of patches along each spatial dimension
+    num_patches = [
+        orig_dim // p + ((orig_dim % p) > 0) * 1
+        for orig_dim, p in zip(original_dims, patch_size)
+    ]
+    # Reshape patches to the grid of patches
+    patches = torch.unflatten(patches, 0, [S, *num_patches])
+    # Move the channel axis back
+    patches = patches.movedim(1 + dimensions, 1)
+    for _ in reversed(range(dimensions)):
+        patches = patches.movedim(-1, -dimensions)
+        patches = patches.flatten(-dimensions - 1, -dimensions)
+
+    remainders = [s % p for s, p in zip(original_dims, patch_size)]
+    remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
+    for d in remainder_dims:
+        pad = torch.narrow(
+            patches, d + 2, patches.size(d + 2) - remainders[d], remainders[d]
+        )
+        patches = torch.narrow(patches, d + 2, 0, patches.size(d + 2) - patch_size[d])
+        patches = torch.cat((patches, pad), dim=d + 2)
+    return patches
 
 
 def autocorrelation(arr, max_lag=25):
@@ -207,7 +242,7 @@ def get_defaults(config_dict, predict=False):
     return config_dict
 
 
-def fix_axes(images, axes, n_dimensions):
+def axes_to_BCZYX(images, axes, n_dimensions):
     spatial_axes = [d for d in "TZYX" if d in axes]
     spatial_axes = spatial_axes[-n_dimensions:]
     sample_axes = [d for d in "STZYXC" if d in axes and d not in spatial_axes]
@@ -227,9 +262,9 @@ def fix_axes(images, axes, n_dimensions):
 
 def get_imread_fn(file_type):
     """Selects the function that will be used to load the data
-    
+
     Edit this function to load file types that are not supported.
-    The function should return a numpy array. 
+    The function should return a numpy array.
     """
     if file_type in (".png", ".tif", ".tiff"):
         from skimage import io
@@ -377,6 +412,6 @@ def load_data(
     images[0].ndim == len(axes) or _raise(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
-    images = fix_axes(images, axes, n_dimensions)
+    images = axes_to_BCZYX(images, axes, n_dimensions)
     images = np.concatenate(images, 0)
     return torch.from_numpy(images).to(dtype)
