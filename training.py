@@ -31,7 +31,7 @@ with open(args.config_file) as f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
 cfg = utils.get_defaults(cfg)
 
-print("Loading data...")
+print('Loading data...')
 low_snr = utils.load_data(
     cfg["data"]["paths"],
     cfg["data"]["patterns"],
@@ -44,10 +44,10 @@ if cfg["data"]["patch-size"] is not None:
 val_split = 1 - cfg["train-parameters"]["training-split"]
 if math.floor((val_split) * len(low_snr)) == 0:
     print(
-        f"Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
-          {round(val_split, 2)} train/validation along sample axis."
+        f'Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
+          {round(val_split, 2)} train/validation along sample axis.'
     )
-    print("Automatically patching data...")
+    print('Automatically patching data...')
     val_patch_size = [
         math.ceil(
             low_snr.shape[-i] * (val_split ** (1 / cfg["data"]["number-dimensions"]))
@@ -55,17 +55,17 @@ if math.floor((val_split) * len(low_snr)) == 0:
         for i in reversed(range(1, cfg["data"]["number-dimensions"] + 1))
     ]
     low_snr = utils.patchify(low_snr, patch_size=val_patch_size)
-print(f"Noisy data shape: {low_snr.size()}")
+print(f'Noisy data shape: {low_snr.size()}')
 
 if cfg["data"]["clip-outliers"]:
-    print("Clippping min...")
+    print('Clippping min...')
     clip_min = np.percentile(low_snr, 1)
-    print("Clippping max...")
+    print('Clippping max...')
     clip_max = np.percentile(low_snr, 99)
     low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
 print(
-    f"Effective batch size: {cfg["train-parameters"]["batch-size"] * cfg["train-parameters"]["number-grad-batches"]}"
+    f'Effective batch size: {cfg["train-parameters"]["batch-size"] * cfg["train-parameters"]["number-grad-batches"]}'
 )
 n_iters = math.prod(low_snr.shape[-cfg["data"]["number-dimensions"] :]) // math.prod(
     cfg["train-parameters"]["crop-size"]

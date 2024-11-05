@@ -35,6 +35,7 @@ checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
 with open(os.path.join(checkpoint_path, "training-config.pkl"), "rb") as f:
     train_cfg = pickle.load(f)
 
+print('Loading data...')
 low_snr = utils.load_data(
     cfg["data"]["paths"],
     cfg["data"]["patterns"],
@@ -44,12 +45,12 @@ low_snr = utils.load_data(
 original_shape = low_snr.shape
 if cfg["data"]["patch-size"] is not None:
     low_snr = utils.patchify(low_snr, patch_size=cfg["data"]["patch-size"])
-print(f"Noisy data shape: {low_snr.size()}")
+print(f'Noisy data shape: {low_snr.size()}')
 
 if cfg["data"]["clip-outliers"]:
-    print("Clippping min...")
+    print('Clippping min...')
     clip_min = np.percentile(low_snr, 1)
-    print("Clippping max...")
+    print('Clippping max...')
     clip_max = np.percentile(low_snr, 99)
     low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
@@ -163,7 +164,7 @@ if denoised.shape != original_shape:
     denoised = utils.unpatchify(denoised, original_shape=original_shape, patch_size=cfg["data"]["patch-size"])
 
 if not os.path.exists(cfg["data"]["save-path"]):
-    print(f"Creating directory: {cfg["data"]["save-path"]}")
+    print(f'Creating directory: {cfg["data"]["save-path"]}')
     os.makedirs(cfg["data"]["save-path"])
 current_time = time.strftime('%d-%m-%y-%X', time.localtime())
 save_path = os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}.tif")
