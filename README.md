@@ -1,21 +1,21 @@
-# [Unsupervised Denoising for Signal-Dependent and Row-Correlated Imaging Noise](https://arxiv.org/abs/2310.07887)<br>
-## COSDD (COrrelated and Signal-Dependent Denoising)
-<sup>1</sup>Benjamin Salmon and <sup>2</sup>Alexander Krull<br>
+# COSDD (COrrelated and Signal-Dependent Denoising)
+[ArXiv](https://arxiv.org/abs/2310.07887)<br>
+Benjamin Salmon<sup>1</sup> and Alexander Krull<sup>2</sup><br>
 <sup>1, 2</sup>University of Birmingham<br>
 <sup>1</sup>brs209@student.bham.ac.uk, <sup>2</sup>a.f.f.krull@bham.ac.uk<br>
-This project includes code from the [ladder-vae-pytorch](https://github.com/addtt/ladder-vae-pytorch) project, which is licensed under the MIT License.
 
 
 <img src="./resources/matrix.png">
 
+This repository contains code for the paper Unsupervised Denoising for Signal-Dependent and Row-Correlated Imaging Noise. 
+It is a fully unsupervised denoiser for removing noise that is correlated along rows or columns of images. This type of noise commonly occurs in scanning-based microscopy and in some sensors such as EMCCD and sCMOS. It is trained using only noisy images, i.e., the very data that is to be denoised.
 
-Abstract: Accurate analysis of microscopy images is hindered by the presence of noise. This noise is usually signal-dependent and often additionally correlated along rows or columns of pixels. Current self- and unsupervised denoisers can address signal-dependent noise, but none can reliably remove noise that is also row- or column-correlated. Here, we present the first fully unsupervised deep learning-based denoiser capable of handling imaging noise that is row-correlated as well as signal-dependent. Our approach uses a Variational Autoencoder (VAE) with a specially designed autoregressive decoder. This decoder is capable of modeling row-correlated and signal-dependent noise but is incapable of independently modeling underlying clean signal. The VAE therefore produces latent variables containing only clean signal information, and these are mapped back into image space using a proposed second decoder network. Our method does not require a pre-trained noise model and can be trained from scratch using unpaired noisy data. We show that our approach achieves competitive results when applied to a range of different sensor types and imaging modalities.
 
 ## Getting started
 ### Environment
 It is recommended to install the dependencies in a conda environment. If you haven't already, install miniconda on your system by following this [link](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html).<br>
 Once conda is installed, create and activate an environment by entering these lines into a command line interface:<br>
-1. `conda create --name cosdd`
+1. `conda create --name cosdd python=3.12`
 2. `conda activate cosdd`
 
 Next, install PyTorch and torchvision for your system by following this [link](https://pytorch.org/get-started/locally/).<br> 
@@ -23,7 +23,7 @@ After that, you're ready to install the dependencies for this repository:<br>
 `pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
 
 ### Tutorial notebooks
-This repository contains three tutorial notebooks, training.ipynb, prediction.ipynb and generation.ipynb.
+This repository contains tutorial notebooks in the `example_notebooks` folder.
 
 ### Command line interface
 COSDD takes a long time to train. It is recommended to train it in the terminal, instead of the notebooks.
@@ -37,7 +37,7 @@ After training, use the model to denoise by running:<br>
 
 ## Yaml training config file options
 
-Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers`, `train-parameters: monte-carlo-kl`, `hyper-parameters: number-gaussians`.
+Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers`, `hyper-parameters: number-gaussians` and `train-parameters: monte-carlo-kl`.
 <details>
       <summary>model-name</b></summary>
 
