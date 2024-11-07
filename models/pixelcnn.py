@@ -18,8 +18,8 @@ class PixelCNN(nn.Module):
         colour_channels (int): Number of colour channels in the target image.
         s_code_channels (int): Number of channels in the decoded signal code.
         kernel_size (int): Size of the kernel in the convolutional layers.
-        RF_shape (str): Orientation of the receptive field. Can be "horizontal" or "vertical".
-        n_filters (int): Number of filters in the convolutional layers.
+        noise_direction (str): Axis along which receptive field runs.
+        n_filters (int): Number of filters in the convolutional layers. Choose 'x', 'y', 'z' or 'none'
         n_layers (int): Number of layers.
         n_gaussians (int): Number of gaussians in the predictive mixture model.
         gated (int): Whether to use gated activations (A. Oord 2016).
@@ -43,10 +43,13 @@ class PixelCNN(nn.Module):
     ):
         super().__init__()
         noise_direction = noise_direction.lower()
-        assert noise_direction in ("t", "x", "y", "z")
+        assert noise_direction in ("x", "y", "z", "none")
         self.n_gaussians = n_gaussians
         self.colour_channels = colour_channels
         self.noise_direction = noise_direction
+
+        if noise_direction == 'none':
+            kernel_size = 1
 
         # Uses grouped convolutions to ensure that each colour channel is
         # processed separately.

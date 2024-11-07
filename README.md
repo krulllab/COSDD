@@ -166,7 +166,7 @@ hyper-parameters:
 <details>
       <summary>noise-direction</summary>
 
-      (str) "x", "y" or "z". Default: "x".
+      (str) "x", "y", "z" or "none". Default: "x".
       Axis along which noise is correlated.
       
 </details>

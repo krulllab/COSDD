@@ -41,11 +41,11 @@ low_snr = utils.load_data(
 if cfg["data"]["patch-size"] is not None:
     low_snr = utils.patchify(low_snr, patch_size=cfg["data"]["patch-size"])
 
-val_split = 1 - cfg["train-parameters"]["training-split"]
-if math.floor((val_split) * len(low_snr)) == 0:
+if math.ceil(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(low_snr):
+    val_split = round(1 - cfg["train-parameters"]["training-split"], 3)
     print(
         f'Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
-          {round(val_split, 2)} train/validation along sample axis.'
+          {val_split} train/validation along sample axis.'
     )
     print('Automatically patching data...')
     val_patch_size = [
