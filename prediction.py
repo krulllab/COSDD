@@ -168,4 +168,5 @@ if not os.path.exists(cfg["data"]["save-path"]):
     os.makedirs(cfg["data"]["save-path"])
 current_time = time.strftime('%d-%m-%y-%X', time.localtime())
 save_path = os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}.tif")
+print(f'Saving denoised images to {save_path}')
 tifffile.imwrite(save_path, denoised.numpy())

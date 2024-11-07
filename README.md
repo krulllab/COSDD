@@ -23,7 +23,8 @@ After that, you're ready to install the dependencies for this repository:<br>
 `pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
 
 ### Tutorial notebooks
-This repository contains tutorial notebooks in the `example_notebooks` folder.
+This repository contains three tutorial notebooks, training.ipynb, prediction.ipynb and generation.ipynb. 
+They will walk through training a model using an example dataset, using the trained model to denoise the example dataset, and using the trained model to generate entirely new images from nothing.
 
 ### Command line interface
 COSDD takes a long time to train. It is recommended to train it in the terminal, instead of the notebooks.
