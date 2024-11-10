@@ -95,8 +95,8 @@ val_loader = torch.utils.data.DataLoader(
 z_dims = [cfg["hyper-parameters"]["s-code-channels"] // 2] * cfg["hyper-parameters"][
     "number-layers"
 ]
-max_size = max(cfg["train-parameters"]["crop-size"])
-num_halves = math.floor(math.log2(max_size)) - 1
+min_size = min(cfg["train-parameters"]["crop-size"])
+num_halves = math.floor(math.log2(min_size)) - 1
 downsampling = [1] * cfg["hyper-parameters"]["number-layers"]
 difference = max(cfg["hyper-parameters"]["number-layers"] - num_halves, 0)
 i = 0
