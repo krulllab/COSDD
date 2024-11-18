@@ -184,7 +184,7 @@ trainer = pl.Trainer(
     precision=cfg["memory"]["precision"],
 )
 
-with open(os.path.join(checkpoint_path, f"training-config.pkl"), "wb") as f:
-    pickle.dump(cfg, f)
 trainer.fit(hub, train_loader, val_loader)
 trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
+with open(os.path.join(checkpoint_path, f"training-config.pkl"), "wb") as f:
+    pickle.dump(cfg, f)
