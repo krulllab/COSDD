@@ -413,5 +413,5 @@ def load_data(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
     images = axes_to_BCZYX(images, axes, n_dimensions)
-    images = np.concatenate(images, 0)
+    images = np.concatenate(images, 0).astype(float)
     return torch.from_numpy(images).to(dtype)
