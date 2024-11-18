@@ -8,6 +8,7 @@ import warnings
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 import torch
+from pytorch_lightning.plugins.environments import LightningEnvironment
 import pytorch_lightning as pl
 import numpy as np
 from tqdm import tqdm
@@ -139,6 +140,7 @@ if direct_denoiser is not None:
         enable_checkpointing=False,
         logger=False,
         precision=cfg["memory"]["precision"],
+        plugins=[LightningEnvironment()],
     )
     direct = predictor.predict(hub, predict_loader)
     denoised = torch.cat(direct, dim=0)
@@ -150,6 +152,7 @@ else:
         enable_progress_bar=False,
         enable_checkpointing=False,
         logger=False,
+        plugins=[LightningEnvironment()],
         precision=cfg["memory"]["precision"],
     )
     samples = []

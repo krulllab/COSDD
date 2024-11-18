@@ -20,8 +20,8 @@ train-parameters:
 hyper-parameters:
   noise-direction: "x"
   s-code-channels: 64
-  number-layers: 14
-  number-gaussians: 3
+  number-layers: 8
+  number-gaussians: 5
 memory:
   precision: "bf16-mixed"
   checkpointed: True

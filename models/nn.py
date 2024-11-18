@@ -174,7 +174,7 @@ class ResBlockWithResampling(nn.Module):
                 kernel_size=3,
                 stride=2,
                 padding=1,
-                padding_mode="replicate",
+                padding_mode="reflect",
                 groups=groups,
                 dimensions=dimensions,
             )
@@ -396,7 +396,7 @@ class NormalStochasticBlock(nn.Module):
                 2 * c_vars,
                 kernel,
                 padding=pad,
-                padding_mode="replicate",
+                padding_mode="reflect",
                 dimensions=dimensions,
             )
         self.conv_in_q = Conv(
@@ -404,7 +404,7 @@ class NormalStochasticBlock(nn.Module):
             2 * c_vars,
             kernel,
             padding=pad,
-            padding_mode="replicate",
+            padding_mode="reflect",
             dimensions=dimensions,
         )
         self.conv_out = Conv(
@@ -412,7 +412,7 @@ class NormalStochasticBlock(nn.Module):
             c_out,
             kernel,
             padding=pad,
-            padding_mode="replicate",
+            padding_mode="reflect",
             dimensions=dimensions,
         )
 

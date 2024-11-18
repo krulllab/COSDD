@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 import torch
 import pytorch_lightning as pl
+from pytorch_lightning.plugins.environments import LightningEnvironment
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 import numpy as np
@@ -179,10 +180,11 @@ trainer = pl.Trainer(
     callbacks=[
         EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
     ],
+    plugins=[LightningEnvironment()],
     precision=cfg["memory"]["precision"],
 )
 
-trainer.fit(hub, train_loader, val_loader)
-trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
 with open(os.path.join(checkpoint_path, f"training-config.pkl"), "wb") as f:
     pickle.dump(cfg, f)
+trainer.fit(hub, train_loader, val_loader)
+trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
