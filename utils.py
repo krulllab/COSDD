@@ -231,7 +231,13 @@ def get_defaults(config_dict, predict=False):
                 "gpu": [0],
             },
         }
-
+    for config in config_dict.keys():
+        if config not in defaults.keys():
+            raise ValueError(f'`{config}` is not a valid configuration option')
+        elif isinstance(defaults[config], dict):
+            for subconfig in config_dict[config].keys():
+                if subconfig not in defaults[config].keys():
+                    raise ValueError(f'`{config}: {subconfig}` is not a valid configuration option')
     for config in defaults:
         if config not in config_dict.keys():
             config_dict[config] = defaults[config]
@@ -239,6 +245,10 @@ def get_defaults(config_dict, predict=False):
             for subconfig in defaults[config]:
                 if subconfig not in config_dict[config].keys():
                     config_dict[config][subconfig] = defaults[config][subconfig]
+    if config_dict["data"]["patch-size"] is not None:
+        for i, s in enumerate(config_dict["train-parameters"]["crop-size"]):
+            if s > config_dict["data"]["patch-size"][i]:
+                raise ValueError(f'Random crop size: {config_dict["train-parameters"]["crop-size"]} is larger than patch size: {config_dict["data"]["patch-size"]}')
     return config_dict
 
 
@@ -276,6 +286,8 @@ def get_imread_fn(file_type):
         imread_fn = czifile.imread
     elif file_type == ".npy":
         imread_fn = np.load
+    elif file_type == ".txt":
+        imread_fn = np.loadtxt
     else:
         raise Exception(f"Unsupported file type: {file_type}")
     return imread_fn
