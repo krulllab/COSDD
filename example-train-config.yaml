@@ -7,7 +7,7 @@ data:
   patch-size: null
   clip-outliers: False
 train-parameters:
-  max-time: "00:06:00:00"
+  max-time: "00:12:00:00"
   max-epochs: 1000
   patience: 50
   batch-size: 4
@@ -20,7 +20,7 @@ train-parameters:
 hyper-parameters:
   noise-direction: "x"
   s-code-channels: 64
-  number-layers: 8
+  number-layers: 14
   number-gaussians: 5
 memory:
   precision: "bf16-mixed"

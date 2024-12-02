@@ -121,15 +121,12 @@ class UNet(nn.Module):
                 )
             )
 
-        self.final_top_down = nn.Sequential()
-        for i in range(blocks_per_layer):
-            self.final_top_down.append(
-                ResBlockWithResampling(
-                    c_in=n_filters,
-                    c_out=n_filters if i < (blocks_per_layer - 1) else colour_channels,
+        self.final_top_down = Conv(
+                    in_channels=n_filters,
+                    out_channels=colour_channels,
+                    kernel_size=1,
                     dimensions=dimensions,
                 )
-            )
 
     def forward(self, x):
         # Pad x to have base 2 side lengths to make resampling steps simpler

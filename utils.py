@@ -217,6 +217,7 @@ def get_defaults(config_dict, predict=False):
             "model-name": None,
             "data": {
                 "paths": None,
+                "save-path": None,
                 "patterns": None,
                 "axes": None,
                 "number-dimensions": 2,
@@ -276,11 +277,7 @@ def get_imread_fn(file_type):
     Edit this function to load file types that are not supported.
     The function should return a numpy array.
     """
-    if file_type in (".png", ".tif", ".tiff"):
-        from skimage import io
-
-        imread_fn = io.imread
-    elif file_type == ".czi":
+    if file_type == ".czi":
         import czifile
 
         imread_fn = czifile.imread
@@ -289,7 +286,9 @@ def get_imread_fn(file_type):
     elif file_type == ".txt":
         imread_fn = np.loadtxt
     else:
-        raise Exception(f"Unsupported file type: {file_type}")
+        from skimage import io
+
+        imread_fn = io.imread
     return imread_fn
 
 

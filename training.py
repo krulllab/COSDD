@@ -1,10 +1,10 @@
 import yaml
 import os
 import argparse
-import pickle
 import math
 import random
 import warnings
+
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 import torch
@@ -15,10 +15,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import numpy as np
 
 import utils
-from models.lvae import LadderVAE
-from models.pixelcnn import PixelCNN
-from models.s_decoder import SDecoder
-from models.unet import UNet
+from models.get_models import get_models
 from models.hub import Hub
 
 
@@ -32,7 +29,7 @@ with open(args.config_file) as f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
 cfg = utils.get_defaults(cfg)
 
-print('Loading data...')
+print("Loading data...")
 low_snr = utils.load_data(
     cfg["data"]["paths"],
     cfg["data"]["patterns"],
@@ -48,7 +45,7 @@ if math.ceil(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(lo
         f'Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
           {val_split} train/validation along sample axis.'
     )
-    print('Automatically patching data...')
+    print("Automatically patching data...")
     val_patch_size = [
         math.ceil(
             low_snr.shape[-i] * (val_split ** (1 / cfg["data"]["number-dimensions"]))
@@ -56,12 +53,12 @@ if math.ceil(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(lo
         for i in reversed(range(1, cfg["data"]["number-dimensions"] + 1))
     ]
     low_snr = utils.patchify(low_snr, patch_size=val_patch_size)
-print(f'Noisy data shape: {low_snr.size()}')
+print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
-    print('Clippping min...')
+    print("Clippping min...")
     clip_min = np.percentile(low_snr, 1)
-    print('Clippping max...')
+    print("Clippping max...")
     clip_max = np.percentile(low_snr, 99)
     low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
@@ -93,62 +90,7 @@ val_loader = torch.utils.data.DataLoader(
     shuffle=False,
 )
 
-z_dims = [cfg["hyper-parameters"]["s-code-channels"] // 2] * cfg["hyper-parameters"][
-    "number-layers"
-]
-min_size = min(cfg["train-parameters"]["crop-size"])
-num_halves = math.floor(math.log2(min_size)) - 1
-downsampling = [1] * cfg["hyper-parameters"]["number-layers"]
-difference = max(cfg["hyper-parameters"]["number-layers"] - num_halves, 0)
-i = 0
-while difference > 0:
-    for j in range(cfg["hyper-parameters"]["number-layers"] // 2):
-        downsampling[i + j * 2] = 0
-        difference -= 1
-        if difference == 0:
-            break
-    i += 1
-
-lvae = LadderVAE(
-    colour_channels=low_snr.shape[1],
-    img_size=cfg["train-parameters"]["crop-size"],
-    s_code_channels=cfg["hyper-parameters"]["s-code-channels"],
-    n_filters=cfg["hyper-parameters"]["s-code-channels"],
-    z_dims=z_dims,
-    downsampling=downsampling,
-    monte_carlo_kl=cfg["train-parameters"]["monte-carlo-kl"],
-    dimensions=cfg["data"]["number-dimensions"],
-)
-
-ar_decoder = PixelCNN(
-    colour_channels=low_snr.shape[1],
-    s_code_channels=cfg["hyper-parameters"]["s-code-channels"],
-    kernel_size=5,
-    noise_direction=cfg["hyper-parameters"]["noise-direction"],
-    n_filters=64,
-    n_layers=4,
-    n_gaussians=cfg["hyper-parameters"]["number-gaussians"],
-    dimensions=cfg["data"]["number-dimensions"],
-)
-
-s_decoder = SDecoder(
-    colour_channels=low_snr.shape[1],
-    s_code_channels=cfg["hyper-parameters"]["s-code-channels"],
-    n_filters=cfg["hyper-parameters"]["s-code-channels"],
-    dimensions=cfg["data"]["number-dimensions"],
-)
-
-if cfg["train-parameters"]["use-direct-denoiser"]:
-    direct_denoiser = UNet(
-        colour_channels=low_snr.shape[1],
-        n_filters=cfg["hyper-parameters"]["s-code-channels"],
-        n_layers=cfg["hyper-parameters"]["number-layers"],
-        downsampling=downsampling,
-        loss_fn=cfg["train-parameters"]["direct-denoiser-loss"],
-        dimensions=cfg["data"]["number-dimensions"],
-    )
-else:
-    direct_denoiser = None
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1])
 
 # Each channel is normalised individually
 mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
@@ -186,5 +128,5 @@ trainer = pl.Trainer(
 
 trainer.fit(hub, train_loader, val_loader)
 trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
-with open(os.path.join(checkpoint_path, f"training-config.pkl"), "wb") as f:
-    pickle.dump(cfg, f)
+with open(os.path.join(checkpoint_path, 'training-config.yaml'), 'w') as f:
+    yaml.dump(cfg, f, default_flow_style=False)

@@ -21,9 +21,9 @@ class Hub(pl.LightningModule):
         predictive distribution for the input.
     s_decoder : torch.nn.Module
         A decoder that takes the latent code and maps it into image space.
-    data_mean : float, optional
+    data_mean : torch.tensor, optional
         The mean of the training data. Used to normalise the data.
-    data_std : float, optional
+    data_std : torch.tensor, optional
         The standard deviation of the training data. Used to normalise the data.
     n_grad_batches : int, optional
         The number of batches to accumulate gradients over before updating the
@@ -38,8 +38,8 @@ class Hub(pl.LightningModule):
         ar_decoder,
         s_decoder,
         direct_denoiser=None,
-        data_mean=0,
-        data_std=1,
+        data_mean=torch.tensor(0),
+        data_std=torch.tensor(1),
         n_grad_batches=1,
         checkpointed=True,
     ):
