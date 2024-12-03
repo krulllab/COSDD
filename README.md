@@ -22,6 +22,12 @@ Next, install PyTorch and torchvision for your system by following this [link](h
 After that, you're ready to install the dependencies for this repository:<br>
 `pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
 
+### Data
+The tutorial notebook training.ipynb will download an example dataset and store it as a .tiff in `./data`.
+By default, this repo uses `skimage.io.imread` to load images, which works for common image types including .tiff.
+If your data is unsupported, edit `utils.get_imread_fn` to use a different function.
+The function should return images as a numpy array.
+
 ### Tutorial notebooks
 This repository contains three tutorial notebooks, training.ipynb, prediction.ipynb and generation.ipynb. 
 They will walk through training a model using an example dataset, using the trained model to denoise the example dataset, and using the trained model to generate entirely new images from nothing.
