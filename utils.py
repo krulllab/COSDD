@@ -246,7 +246,7 @@ def get_defaults(config_dict, predict=False):
             for subconfig in defaults[config]:
                 if subconfig not in config_dict[config].keys():
                     config_dict[config][subconfig] = defaults[config][subconfig]
-    if config_dict["data"]["patch-size"] is not None:
+    if config_dict["data"]["patch-size"] is not None and predict == False:
         for i, s in enumerate(config_dict["train-parameters"]["crop-size"]):
             if s > config_dict["data"]["patch-size"][i]:
                 raise ValueError(f'Random crop size: {config_dict["train-parameters"]["crop-size"]} is larger than patch size: {config_dict["data"]["patch-size"]}')
