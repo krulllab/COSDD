@@ -97,7 +97,7 @@ else:
         precision=cfg["memory"]["precision"],
     )
     samples = []
-    for _ in tqdm(range(cfg["n_samples"])):
+    for _ in tqdm(range(cfg["n-samples"])):
         out = predictor.predict(hub, predict_loader)
         out = torch.cat(out, dim=0)
         samples.append(out)

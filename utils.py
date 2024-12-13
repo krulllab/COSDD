@@ -215,6 +215,7 @@ def get_defaults(config_dict, predict=False):
     else:
         defaults = {
             "model-name": None,
+            "n-samples": 100,
             "data": {
                 "paths": None,
                 "save-path": None,
@@ -408,7 +409,9 @@ def load_data(
                 f"{path} is a file. Use `patterns` to set file names."
             )
         for pattern in patterns:
-            files.extend(list(path.glob(pattern)))
+            full_paths = list(path.glob(pattern))
+            full_paths.sort()
+            files.extend(full_paths)
     len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
