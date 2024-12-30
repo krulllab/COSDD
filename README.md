@@ -234,6 +234,12 @@ Important options are: `model_name`, `data: paths, patterns & axes`.
       (str) Name of the trained model.
 
 </details>
+<details>
+      <summary>n-samples</b></summary>
+
+      (int) When randomly sampling denoised images (i.e. not using the direct denoiser), sets number of images to sample for averaging. Default: 100.
+
+</details>
 <br>
 data: 
 <details>
@@ -290,12 +296,11 @@ memory:
       <summary>precision</summary>
 
       (str) Floating point precision for training. Default: "bf16-mixed".
-      "32-true"
-      "32"
-      "16-mixed"
-      "bf16-mixed"
       "16-true"
+      "16-mixed"
       "bf16-true"
+      "bf16-mixed"
+      "32-true"
       "64-true"
       See https://lightning.ai/docs/pytorch/stable/common/precision.html
 

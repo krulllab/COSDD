@@ -2,6 +2,7 @@ import random
 from pathlib import Path
 from typing import Literal
 
+from pytorch_lightning import LightningDataModule
 import torch
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -38,7 +39,7 @@ def patchify(x, patch_size):
     return x
 
 
-def unpatchify(patches, original_shape, patch_size):
+def unpatchify(patches, original_shape):
     """
     Reverse the patchification process and return the patched tensor to its original shape.
 
@@ -53,6 +54,7 @@ def unpatchify(patches, original_shape, patch_size):
     # Original shape details
     S, C, *original_dims = original_shape
     dimensions = len(original_dims)
+    patch_size = patches.shape[-dimensions:]
 
     # Calculate the number of patches along each spatial dimension
     num_patches = [
@@ -147,6 +149,55 @@ class TrainDataset(torch.utils.data.Dataset):
         return image
 
 
+class DataModule(LightningDataModule):
+    def __init__(
+        self,
+        low_snr,
+        batch_size=4,
+        rand_crop_size=(256, 256),
+        train_split=0.9,
+    ):
+        super().__init__()
+        self.low_snr = low_snr
+        self.batch_size = batch_size
+        self.rand_crop_size = rand_crop_size
+        self.train_split = train_split
+
+    def setup(self, stage):
+        n_iters = np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
+        rand_crop = RandomCrop(self.rand_crop_size)
+        random.shuffle(self.low_snr)
+        train_set = self.low_snr[: int(len(self.low_snr) * self.train_split)]
+        val_set = self.low_snr[int(len(self.low_snr) * self.train_split) :]
+
+        self.train_set = TrainDataset(
+            train_set,
+            n_iters=n_iters,
+            transform=rand_crop,
+        )
+        self.val_set = TrainDataset(
+            val_set,
+            n_iters=n_iters,
+            transform=rand_crop,
+        )
+
+    def train_dataloader(self):
+        train_loader = torch.utils.data.DataLoader(
+            self.train_set,
+            batch_size=self.batch_size,
+            shuffle=True,
+        )
+        return train_loader
+
+    def val_dataloader(self):
+        val_loader = torch.utils.data.DataLoader(
+            self.val_set,
+            batch_size=self.batch_size,
+            shuffle=False,
+        )
+        return val_loader
+
+
 class PredictDataset(torch.utils.data.Dataset):
     def __init__(self, images):
         self.images = images
@@ -177,6 +228,7 @@ def normalise(x):
 
 
 def get_defaults(config_dict, predict=False):
+    """Loads default configuration options."""
     if not predict:
         defaults = {
             "model-name": None,
@@ -235,11 +287,13 @@ def get_defaults(config_dict, predict=False):
         }
     for config in config_dict.keys():
         if config not in defaults.keys():
-            raise ValueError(f'`{config}` is not a valid configuration option')
+            raise ValueError(f"`{config}` is not a valid configuration option")
         elif isinstance(defaults[config], dict):
             for subconfig in config_dict[config].keys():
                 if subconfig not in defaults[config].keys():
-                    raise ValueError(f'`{config}: {subconfig}` is not a valid configuration option')
+                    raise ValueError(
+                        f"`{config}: {subconfig}` is not a valid configuration option"
+                    )
     for config in defaults:
         if config not in config_dict.keys():
             config_dict[config] = defaults[config]
@@ -250,11 +304,13 @@ def get_defaults(config_dict, predict=False):
     if config_dict["data"]["patch-size"] is not None and predict == False:
         for i, s in enumerate(config_dict["train-parameters"]["crop-size"]):
             if s > config_dict["data"]["patch-size"][i]:
-                raise ValueError(f'Random crop size: {config_dict["train-parameters"]["crop-size"]} is larger than patch size: {config_dict["data"]["patch-size"]}')
+                raise ValueError(
+                    f'Random crop size: {config_dict["train-parameters"]["crop-size"]} is larger than patch size: {config_dict["data"]["patch-size"]}'
+                )
     return config_dict
 
 
-def axes_to_BCZYX(images, axes, n_dimensions):
+def axes_to_SCZYX(images, axes, n_dimensions):
     spatial_axes = [d for d in "TZYX" if d in axes]
     spatial_axes = spatial_axes[-n_dimensions:]
     sample_axes = [d for d in "STZYXC" if d in axes and d not in spatial_axes]
@@ -272,6 +328,45 @@ def axes_to_BCZYX(images, axes, n_dimensions):
     return images
 
 
+def SCZYX_to_axes(images, original_axes, original_sizes):
+    n_dimensions = images.ndim - 2
+    spatial_axes = [d for d in "TZYX" if d in original_axes]
+    spatial_axes = spatial_axes[-n_dimensions:]
+    sample_axes = [d for d in "STZYX" if d in original_axes and d not in spatial_axes]
+    target_axes = sample_axes + spatial_axes
+    missing_axes = [i for i in original_axes if i not in target_axes and i != "C"]
+    sample_axes = missing_axes + sample_axes
+    target_axes = sample_axes + spatial_axes
+    sample_sizes = [
+        [a[original_axes.index(s)] for s in sample_axes] for a in original_sizes
+    ]
+    sample_counts = [np.prod(s) for s in sample_sizes]
+    images_list = []
+    for i in range(len(original_sizes)):
+        images_list.append(images[: sample_counts[i]])
+        images = images[sample_counts[i] :]
+    images_list = [
+        image.reshape(*sample_sizes[i], image.shape[1], *image.shape[-n_dimensions:])
+        for i, image in enumerate(images_list)
+    ]
+    if "C" not in original_axes:
+        images_list = [image.squeeze(-n_dimensions - 1) for image in images_list]
+    else:
+        target_axes = target_axes[:-n_dimensions] + ["C"] + target_axes[-n_dimensions:]
+    original_transpose = [target_axes.index(d) for d in original_axes]
+    images_reshaped = [image.transpose(original_transpose) for image in images_list]
+    return images_reshaped
+
+
+import rawpy
+
+
+def read_raw(f):
+    with rawpy.imread(str(f)) as raw:
+        rgb = raw.raw_image_visible.copy()
+    return rgb
+
+
 def get_imread_fn(file_type):
     """Selects the function that will be used to load the data
 
@@ -286,6 +381,10 @@ def get_imread_fn(file_type):
         imread_fn = np.load
     elif file_type == ".txt":
         imread_fn = np.loadtxt
+    elif file_type == ".ARW":
+        import rawpy
+
+        imread_fn = read_raw
     else:
         from skimage import io
 
@@ -387,7 +486,8 @@ def load_data(
         n_dimensions (int): Desired spatial dimensions of images once loaded (1, 2 or 3). Eg can be used to treat T(ime) as a spatial or sample dimension.
         dtype (np.dtype): Desired data type of loaded images.
     Returns:
-        np.ndarray: The image data.
+        torch.tensor: The image data.
+        list: The sizes of the images before conversion to pytorch [S, C, Z | Y | X].
     """
     if not isinstance(paths, list):
         paths = [paths]
@@ -401,6 +501,7 @@ def load_data(
     )
     axes = axes_check_and_normalize(axes, n_dimensions)
     files = []
+    paths.sort()
     for path in paths:
         path = Path(path)
         path.exists() or _raise(FileNotFoundError(f'"{path}" does not exist'))
@@ -416,16 +517,22 @@ def load_data(
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
     images = [imread_fn(f) for f in files]
+    original_sizes = []
+    spatial_dims = [axes.index(i) for i in "XYZT"[:n_dimensions]]
+    spatial_sizes = np.array(images[0].shape)[spatial_dims]
     for i in images:
-        if i.shape != images[0].shape:
+        original_size = np.array(i.shape)
+        i_spatial_size = original_size[spatial_dims]
+        if np.all(i_spatial_size != spatial_sizes):
             _raise(
                 ValueError(
-                    f"Images do not all have the same shape ({i.shape} and {images[0].shape})"
+                    f"Images do not all have the same spatial shape ({i.shape} and {images[0].shape})"
                 )
             )
+        original_sizes.append(original_size)
     images[0].ndim == len(axes) or _raise(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
-    images = axes_to_BCZYX(images, axes, n_dimensions)
+    images = axes_to_SCZYX(images, axes, n_dimensions)
     images = np.concatenate(images, 0).astype(float)
-    return torch.from_numpy(images).to(dtype)
+    return torch.from_numpy(images).to(dtype), original_sizes
