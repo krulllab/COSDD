@@ -40,7 +40,8 @@ To train, run:<br>
 `python training.py example-train-config.yaml`
 
 After training, use the model to denoise by running:<br>
-`python prediction.py example-predict-config.yaml`
+`python prediction.py example-predict-config.yaml`<br>
+The prediction script will save results in a directory called denoised-\<date\>_\<time\>, with a file called denoised-\<i\> for each input file.
 
 ## Yaml training config file options
 
