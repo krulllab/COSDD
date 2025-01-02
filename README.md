@@ -10,6 +10,9 @@ Benjamin Salmon<sup>1</sup> and Alexander Krull<sup>2</sup><br>
 This repository contains code for the paper Unsupervised Denoising for Signal-Dependent and Row-Correlated Imaging Noise. 
 It is a fully unsupervised denoiser for removing noise that is correlated along rows or columns of images. This type of noise commonly occurs in scanning-based microscopy and in some sensors such as EMCCD and sCMOS. It is trained using only noisy images, i.e., the very data that is to be denoised.
 
+**Reproducing results in publication**<br>
+There have been updates to this code since the results in the WACV paper were obtained.
+Please checkout the WACV_reproducibility branch to reproduce those results.
 
 ## Getting started
 ### Environment
