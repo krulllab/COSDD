@@ -358,15 +358,6 @@ def SCZYX_to_axes(images, original_axes, original_sizes):
     return images_reshaped
 
 
-import rawpy
-
-
-def read_raw(f):
-    with rawpy.imread(str(f)) as raw:
-        rgb = raw.raw_image_visible.copy()
-    return rgb
-
-
 def get_imread_fn(file_type):
     """Selects the function that will be used to load the data
 
@@ -383,6 +374,11 @@ def get_imread_fn(file_type):
         imread_fn = np.loadtxt
     elif file_type == ".ARW":
         import rawpy
+
+        def read_raw(f):
+            with rawpy.imread(str(f)) as raw:
+                rgb = raw.raw_image_visible.copy()
+            return rgb
 
         imread_fn = read_raw
     else:
