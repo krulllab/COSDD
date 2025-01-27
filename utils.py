@@ -343,8 +343,8 @@ def SCZYX_to_axes(images, original_axes, original_sizes):
     sample_counts = [np.prod(s) for s in sample_sizes]
     images_list = []
     for i in range(len(original_sizes)):
-        images_list.append(images[: sample_counts[i]])
-        images = images[sample_counts[i] :]
+        images_list.append(images[: int(sample_counts[i])])
+        images = images[int(sample_counts[i]) :]
     images_list = [
         image.reshape(*sample_sizes[i], image.shape[1], *image.shape[-n_dimensions:])
         for i, image in enumerate(images_list)
@@ -514,17 +514,17 @@ def load_data(
     imread_fn = get_imread_fn(file_type)
     images = [imread_fn(f) for f in files]
     original_sizes = []
-    spatial_dims = [axes.index(i) for i in "XYZT"[:n_dimensions]]
-    spatial_sizes = np.array(images[0].shape)[spatial_dims]
+    # spatial_dims = [axes.index(i) for i in "XYZT"][:n_dimensions]
+    # spatial_sizes = np.array(images[0].shape)[spatial_dims]
     for i in images:
         original_size = np.array(i.shape)
-        i_spatial_size = original_size[spatial_dims]
-        if np.all(i_spatial_size != spatial_sizes):
-            _raise(
-                ValueError(
-                    f"Images do not all have the same spatial shape ({i.shape} and {images[0].shape})"
-                )
-            )
+        # i_spatial_size = original_size[spatial_dims]
+        # if np.all(i_spatial_size != spatial_sizes):
+        #     _raise(
+        #         ValueError(
+        #             f"Images do not all have the same spatial shape ({i.shape} and {images[0].shape})"
+        #         )
+        #     )
         original_sizes.append(original_size)
     images[0].ndim == len(axes) or _raise(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
