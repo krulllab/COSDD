@@ -113,15 +113,19 @@ logger = TensorBoardLogger(checkpoint_path)
 
 if isinstance(cfg["memory"]["gpu"], int):
     cfg["memory"]["gpu"] = [cfg["memory"]["gpu"]]
+if cfg["train-parameters"]["patience"] is not None:
+    callbacks = [
+        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
+    ]
+else:
+    callbacks = []
 trainer = pl.Trainer(
     logger=logger,
     accelerator="gpu",
     devices=cfg["memory"]["gpu"],
     max_epochs=cfg["train-parameters"]["max-epochs"],
     max_time=cfg["train-parameters"]["max-time"],
-    callbacks=[
-        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
-    ],
+    callbacks=callbacks,
     plugins=[LightningEnvironment()],
     precision=cfg["memory"]["precision"],
 )
