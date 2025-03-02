@@ -48,7 +48,7 @@ The prediction script will save results in a directory called denoised-\<date\>_
 
 ## Yaml training config file options
 
-Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers`, `hyper-parameters: number-gaussians` and `train-parameters: monte-carlo-kl`.
+Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers` and `hyper-parameters: number-gaussians`.
 <details>
       <summary>model-name</b></summary>
 
@@ -146,15 +146,6 @@ train-parameters:
 
       (float) Percent of data to use as training set. Default: 0.9.
       1 - training-split is used as validation set.
-      
-</details>
-<details>
-      <summary>monte-carlo-kl</summary>
-
-      (bool) Experimental. Default: False.
-      Set True to calculate KL divergence using random samples from posterior. 
-      I've found this can help when training crashes due to NaNs.
-      Set False to calculate KL divergence analytically (common method).
       
 </details>
 <details>

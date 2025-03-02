@@ -420,9 +420,6 @@ class NormalStochasticBlock(nn.Module):
         self,
         p_params,
         q_params=None,
-        forced_latent=None,
-        use_mode=False,
-        force_constant_output=False,
     ):
         """
         Forward pass of the stochastic layer.
@@ -430,17 +427,12 @@ class NormalStochasticBlock(nn.Module):
         Args:
             p_params (torch.Tensor): Parameters of the prior distribution p(z).
             q_params (torch.Tensor, optional): Parameters of the approximate posterior distribution q(z|x).
-            forced_latent (torch.Tensor, optional): Forced latent variable.
-            use_mode (bool, optional): Whether to use the mode of the distribution.
-            force_constant_output (bool, optional): Whether to force the output to be constant across batch.
 
         Returns:
             torch.Tensor: Sample from either q(z|x) or p(z).
             torch.Distribution: q(z|x)
             torch.Distribution: p(z)
         """
-
-        assert (forced_latent is None) or (not use_mode)
 
         if self.transform_p_params:
             p_params = self.conv_in_p(p_params)
@@ -450,40 +442,28 @@ class NormalStochasticBlock(nn.Module):
         # Define p(z)
         p_mu, p_std_ = p_params[:, 0::2], p_params[:, 1::2]
         p_std = nn.functional.softplus(p_std_)
-        p = Normal(p_mu, p_std, validate_args=True)
 
         if q_params is not None:
             # Define q(z)
             q_params = self.conv_in_q(q_params)
             q_mu, q_std_ = q_params[:, 0::2], q_params[:, 1::2]
             q_std = nn.functional.softplus(q_std_)
-            q = Normal(q_mu, q_std, validate_args=True)
 
             # Sample from q(z)
-            sampling_distrib = q
+            z = torch.empty(q_mu.shape, device=q_mu.device).normal_()
+            z = z * q_std + q_mu
         else:
             # Sample from p(z)
-            q = None
-            sampling_distrib = p
-
-        # Generate latent variable (typically by sampling)
-        if forced_latent is None:
-            if use_mode:
-                z = sampling_distrib.mean
-            else:
-                z = sampling_distrib.rsample()
-        else:
-            z = forced_latent
-
-        # Copy one sample (and distrib parameters) over the whole batch.
-        # This is used when doing experiment from the prior - q is not used.
-        if force_constant_output:
-            z = z[0:1].expand_as(z).clone()
+            q_mu = q_std = None
+            z = torch.empty(p_mu.shape, device=p_mu.device).normal_()
+            z = z * p_std + p_mu
 
         # Output of stochastic layer
         z = self.conv_out(z)
 
-        return z, q, p
+        q_params = {"mu": q_mu, "std": q_std}
+        p_params = {"mu": p_mu, "std": p_std}
+        return z, q_params, p_params
 
 
 class VAETopDownLayer(nn.Module):
@@ -569,9 +549,6 @@ class VAETopDownLayer(nn.Module):
         skip_connection_input=None,
         bu_value=None,
         n_img_prior=None,
-        forced_latent=None,
-        use_mode=False,
-        force_constant_output=False,
     ):
         """
         Forward pass of the top-down layer.
@@ -581,9 +558,6 @@ class VAETopDownLayer(nn.Module):
             skip_connection_input (torch.Tensor, optional): Skip connection from the previous layer.
             bu_value (torch.Tensor, optional): Inferred bottom-up value at this layer.
             n_img_prior (int, optional): Number of images to generate.
-            forced_latent (torch.Tensor, optional): Forced latent variable.
-            use_mode (bool, optional): Whether to use the mode of the distribution.
-            force_constant_output (bool, optional): Whether to force the output to be constant across batch.
 
         Returns:
             torch.Tensor: Sample from either q(z|x) or p(z).
@@ -615,9 +589,6 @@ class VAETopDownLayer(nn.Module):
         z, q, p = self.stochastic(
             p_params=p_params,
             q_params=q_params,
-            forced_latent=forced_latent,
-            use_mode=use_mode,
-            force_constant_output=force_constant_output,
         )
 
         # Skip connection from previous layer

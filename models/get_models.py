@@ -30,7 +30,6 @@ def get_models(config, n_channels):
         n_filters=config["hyper-parameters"]["s-code-channels"],
         z_dims=z_dims,
         downsampling=downsampling,
-        monte_carlo_kl=config["train-parameters"]["monte-carlo-kl"],
         dimensions=config["data"]["number-dimensions"],
     )
 

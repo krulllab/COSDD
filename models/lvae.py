@@ -25,7 +25,6 @@ SOFTWARE.
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-from torch.distributions import kl_divergence
 
 from .utils import get_padded_size, spatial_pad_crop
 from .nn import Conv, ResBlockWithResampling, BottomUpLayer, VAETopDownLayer
@@ -58,7 +57,6 @@ class LadderVAE(nn.Module):
         blocks_per_layer=1,
         n_filters=64,
         learn_top_prior=True,
-        monte_carlo_kl=False,
         stochastic_skip=True,
         downsampling=None,
         checkpointed=False,
@@ -72,7 +70,6 @@ class LadderVAE(nn.Module):
         self.n_layers = len(self.z_dims)
         self.blocks_per_layer = blocks_per_layer
         self.n_filters = n_filters
-        self.monte_carlo_kl = monte_carlo_kl
         self.stochastic_skip = stochastic_skip
         self.checkpointed = checkpointed
 
@@ -80,7 +77,6 @@ class LadderVAE(nn.Module):
         if downsampling is None:
             downsampling = [0] * self.n_layers
         self.n_downsample = sum(downsampling)
-
 
         assert max(downsampling) <= self.blocks_per_layer
         assert len(downsampling) == self.n_layers
@@ -147,11 +143,11 @@ class LadderVAE(nn.Module):
             )
 
         self.final_top_down = Conv(
-                    in_channels=n_filters,
-                    out_channels=s_code_channels,
-                    kernel_size=1,
-                    dimensions=dimensions,
-            )
+            in_channels=n_filters,
+            out_channels=s_code_channels,
+            kernel_size=1,
+            dimensions=dimensions,
+        )
 
     def forward(self, x):
         # Pad x to have base 2 side lengths to make resampling steps simpler
@@ -198,14 +194,7 @@ class LadderVAE(nn.Module):
         self,
         bu_values=None,
         n_img_prior=None,
-        mode_layers=None,
-        constant_layers=None,
-        forced_latent=None,
     ):
-        if mode_layers is None:
-            mode_layers = []
-        if constant_layers is None:
-            constant_layers = []
         if bu_values is None:
             bu_values = [None] * self.n_layers
 
@@ -213,14 +202,8 @@ class LadderVAE(nn.Module):
         q_list = []
         p_list = []
 
-        if forced_latent is None:
-            forced_latent = [None] * self.n_layers
-
         p_params = None
         for i in reversed(range(self.n_layers)):
-            use_mode = i in mode_layers
-            constant_out = i in constant_layers
-
             skip_input = p_params
 
             if i % 2 == 0 and self.checkpointed:
@@ -230,9 +213,6 @@ class LadderVAE(nn.Module):
                     skip_input,
                     bu_values[i],
                     n_img_prior,
-                    forced_latent[i],
-                    use_mode,
-                    constant_out,
                     use_reentrant=False,
                 )
             else:
@@ -241,9 +221,6 @@ class LadderVAE(nn.Module):
                     skip_input,
                     bu_values[i],
                     n_img_prior,
-                    forced_latent[i],
-                    use_mode,
-                    constant_out,
                 )
             p_params = z
             q_list.append(q)
@@ -271,11 +248,17 @@ class LadderVAE(nn.Module):
 
     def kl_divergence(self, q_list, p_list):
         kl_sum = 0
-        if self.monte_carlo_kl:
-            for q, p in zip(q_list, p_list):
-                z = q.rsample()
-                kl_sum = kl_sum + (q.log_prob(z).sum() - p.log_prob(z).sum())
-        else:
-            for q, p in zip(q_list, p_list):
-                kl_sum = kl_sum + kl_divergence(q, p).sum()
+        for q, p in zip(q_list, p_list):
+            kl_sum = (
+                kl_sum + kl_divergence(q["mu"], q["std"], p["mu"], p["std"]).sum()
+            )
         return kl_sum
+
+
+def kl_divergence(mu_1, std_1, mu_2, std_2):
+    logstd_1 = torch.log(std_1)
+    logstd_2 = torch.log(std_2)
+    var_ratio = torch.exp(2 * logstd_1) / torch.exp(2 * logstd_2)
+    logstd_diff = logstd_1 - logstd_2
+    t1 = (mu_1 - mu_2).pow(2) / torch.exp(2 * logstd_2)
+    return 0.5 * (var_ratio + t1 - 1) - logstd_diff

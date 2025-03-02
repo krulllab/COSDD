@@ -248,7 +248,7 @@ def get_defaults(config_dict, predict=False):
                 "max-epochs": 1000,
                 "max-time": "00:06:00:00",
                 "patience": 50,
-                "monte-carlo-kl": False,
+                "monte-carlo-kl": False,  # unused. For backwards compatibility
                 "use-direct-denoiser": True,
                 "direct-denoiser-loss": "MSE",
             },
