@@ -317,13 +317,12 @@ memory:
 
 ## BibTeX
 ```
-@misc{salmon2024unsuperviseddenoisingsignaldependentrowcorrelated,
-      title={Unsupervised Denoising for Signal-Dependent and Row-Correlated Imaging Noise}, 
-      author={Benjamin Salmon and Alexander Krull},
-      year={2024},
-      eprint={2310.07887},
-      archivePrefix={arXiv},
-      primaryClass={eess.IV},
-      url={https://arxiv.org/abs/2310.07887}, 
+@InProceedings{Salmon_2025_WACV,
+    author    = {Salmon, Benjamin and Krull, Alexander},
+    title     = {Unsupervised Denoising for Signal-Dependent and Row-Correlated Imaging Noise},
+    booktitle = {Proceedings of the Winter Conference on Applications of Computer Vision (WACV)},
+    month     = {February},
+    year      = {2025},
+    pages     = {2379-2389}
 }
 ```
