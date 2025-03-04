@@ -179,6 +179,13 @@ hyper-parameters:
       
 </details>
 <details>
+      <summary>scale-initialisation</summary>
+
+      (bool) Whether to divide initial conv weights by depth**0.5. Default: False.
+      Can stabilise training when using a larger network. See VDVAE (Child 2020).
+      
+</details>
+<details>
       <summary>number-layers</summary>
 
       (int) Number of levels in Ladder VAE. Default: 14.

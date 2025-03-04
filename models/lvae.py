@@ -41,6 +41,8 @@ class LadderVAE(nn.Module):
         z_dims (list(int)): List of dimensions for the latent variables z.
         blocks_per_layer (int): Number of residual blocks per layer.
         n_filters (int): Number of filters in the convolutional layers.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         learn_top_prior (bool): Whether to learn the top prior.
         stochastic_skip (bool): Whether to use stochastic skip connections.
         downsampling (list(int)): Binary list of downsampling per layer.
@@ -56,6 +58,7 @@ class LadderVAE(nn.Module):
         z_dims=None,
         blocks_per_layer=1,
         n_filters=64,
+        scale_initialisation=False,
         learn_top_prior=True,
         stochastic_skip=True,
         downsampling=None,
@@ -95,6 +98,7 @@ class LadderVAE(nn.Module):
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
+                scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             ),
         )
@@ -113,6 +117,7 @@ class LadderVAE(nn.Module):
                     n_res_blocks=self.blocks_per_layer,
                     n_filters=n_filters,
                     downsampling_steps=downsampling[i],
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
             )
@@ -138,6 +143,7 @@ class LadderVAE(nn.Module):
                     stochastic_skip=stochastic_skip,
                     learn_top_prior=learn_top_prior,
                     top_prior_param_size=self.get_top_prior_param_size(),
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
             )

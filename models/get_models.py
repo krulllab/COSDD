@@ -28,6 +28,7 @@ def get_models(config, n_channels):
         img_size=config["train-parameters"]["crop-size"],
         s_code_channels=config["hyper-parameters"]["s-code-channels"],
         n_filters=config["hyper-parameters"]["s-code-channels"],
+        scale_initialisation=config["hyper-parameters"]["scale-initialisation"],
         z_dims=z_dims,
         downsampling=downsampling,
         dimensions=config["data"]["number-dimensions"],

@@ -255,6 +255,7 @@ def get_defaults(config_dict, predict=False):
             "hyper-parameters": {
                 "s-code-channels": 64,
                 "number-layers": 8,
+                "scale-initialisation": False,
                 "number-gaussians": 3,
                 "noise-direction": "x",
             },

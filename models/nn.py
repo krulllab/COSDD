@@ -98,6 +98,7 @@ class ResidualBlock(nn.Module):
         kernel_size=3,
         groups=1,
         gated=True,
+        scale_initialisation=False,
         dimensions=2,
     ):
         super().__init__()
@@ -107,6 +108,10 @@ class ResidualBlock(nn.Module):
         self.kernel_size = kernel_size
         self.groups = groups
         self.gated = gated
+        if scale_initialisation:
+            self.rescale = channels ** 0.5
+        else:
+            self.rescale = 1.0
 
         BatchNorm = getattr(nn, f"BatchNorm{dimensions}d")
 
@@ -127,7 +132,9 @@ class ResidualBlock(nn.Module):
             self.block.append(GateLayer(self.channels, 1, dimensions=dimensions))
 
     def forward(self, x):
-        return self.block(x) + x
+        out = self.block(x) + x
+        out = out / self.rescale
+        return out
     
 
 class ResBlockWithResampling(nn.Module):
@@ -141,6 +148,8 @@ class ResBlockWithResampling(nn.Module):
         res_block_kernel (int): Kernel size for the residual block.
         groups (int): Number of groups for grouped convolution.
         gated (bool): Whether to use gated activation.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3).
 
     Attributes:
@@ -157,6 +166,7 @@ class ResBlockWithResampling(nn.Module):
         res_block_kernel=3,
         groups=1,
         gated=True,
+        scale_initialisation=False,
         dimensions=2,
     ):
         super().__init__()
@@ -188,6 +198,7 @@ class ResBlockWithResampling(nn.Module):
             kernel_size=res_block_kernel,
             groups=groups,
             gated=gated,
+            scale_initialisation=scale_initialisation,
             dimensions=dimensions,
         )
 
@@ -205,6 +216,8 @@ class MergeLayer(nn.Module):
         channels (int or list[int]): The number of input channels for the convolutional layer and the residual block.
             If an integer is provided, it will be used for all three channels. If a list of integers is provided,
             it should have a length of 3, representing the number of channels for each input.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
 
     Attributes:
@@ -212,7 +225,7 @@ class MergeLayer(nn.Module):
 
     """
 
-    def __init__(self, channels, dimensions=2):
+    def __init__(self, channels, scale_initialisation=False, dimensions=2):
         super().__init__()
         try:
             iter(channels)
@@ -227,6 +240,7 @@ class MergeLayer(nn.Module):
             Conv(channels[0] + channels[1], channels[2], 1, dimensions=dimensions),
             ResidualBlock(
                 channels[2],
+                scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             ),
         )
@@ -245,6 +259,8 @@ class BottomUpLayer(nn.Module):
         n_res_blocks (int): The number of residual blocks in the layer.
         n_filters (int): The number of filters in each residual block.
         downsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
 
     Attributes:
@@ -257,6 +273,7 @@ class BottomUpLayer(nn.Module):
         n_res_blocks,
         n_filters,
         downsampling_steps=0,
+        scale_initialisation=False,
         dimensions=2,
     ):
         super().__init__()
@@ -272,6 +289,7 @@ class BottomUpLayer(nn.Module):
                     c_in=n_filters,
                     c_out=n_filters,
                     resample=resample,
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
             )
@@ -293,6 +311,8 @@ class TopDownLayer(nn.Module):
         is_top_layer (bool): Whether the layer is the top layer.
         upsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
         skip (bool, optional): Whether to use a skip connection from the previous layer. Defaults to False.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
         
     Attributes:
@@ -309,6 +329,7 @@ class TopDownLayer(nn.Module):
         is_top_layer=False,
         upsampling_steps=None,
         skip=False,
+        scale_initialisation=False,
         dimensions=2,
     ):
         super().__init__()
@@ -327,6 +348,7 @@ class TopDownLayer(nn.Module):
                     n_filters,
                     n_filters,
                     resample=resample,
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
             )
@@ -334,12 +356,14 @@ class TopDownLayer(nn.Module):
         if not is_top_layer:
             self.merge = MergeLayer(
                 channels=n_filters,
+                scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             )
 
             if skip:
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
 
@@ -482,6 +506,8 @@ class VAETopDownLayer(nn.Module):
         stochastic_skip (bool): Whether to include a skip connection around the stochastic layer.
         learn_top_prior (bool): Whether to learn the parameters of the top prior.
         top_prior_param_size (int): Spatial size of the top prior parameters.
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+            See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
 
@@ -495,6 +521,7 @@ class VAETopDownLayer(nn.Module):
         stochastic_skip=False,
         learn_top_prior=False,
         top_prior_param_size=None,
+        scale_initialisation=False,
         dimensions=2,
     ):
         super().__init__()
@@ -519,6 +546,7 @@ class VAETopDownLayer(nn.Module):
                     n_filters,
                     n_filters,
                     resample=resample,
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
             )
@@ -534,12 +562,14 @@ class VAETopDownLayer(nn.Module):
         if not is_top_layer:
             self.merge = MergeLayer(
                 channels=n_filters,
+                scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             )
 
             if stochastic_skip:
                 self.skip_connection_merger = MergeLayer(
                     channels=n_filters,
+                    scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
 

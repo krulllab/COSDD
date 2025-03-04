@@ -14,12 +14,12 @@ train-parameters:
   number-grad-batches: 4
   crop-size: [256, 256]
   training-split: 0.9
-  monte-carlo-kl: False
   use-direct-denoiser: True
   direct-denoiser-loss: "MSE"
 hyper-parameters:
   noise-direction: "x"
   s-code-channels: 64
+  scale-initialisation: False
   number-layers: 14
   number-gaussians: 5
 memory:
