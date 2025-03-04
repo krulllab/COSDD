@@ -32,7 +32,7 @@ If your data is unsupported, edit `utils.get_imread_fn` to use a different funct
 The function should return images as a numpy array.
 
 ### Tutorial notebooks
-This repository contains three tutorial notebooks, training.ipynb, prediction.ipynb and generation.ipynb. 
+This repository contains three tutorial notebooks, 1-training.ipynb, 2-prediction.ipynb and 3-generation.ipynb. 
 They will walk through training a model using an example dataset, using the trained model to denoise the example dataset, and using the trained model to generate entirely new images from nothing.
 
 ### Command line interface
@@ -48,7 +48,7 @@ The prediction script will save results in a directory called denoised-\<date\>_
 
 ## Yaml training config file options
 
-Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers` and `hyper-parameters: number-gaussians`.
+Important options are: `model_name`, `data: paths, patterns & axes`, `train-parameters: max-time`, `hyper-parameters: number-gaussians & noise-direction`. If training fails due to NaNs, see `data: clip-outliers`, `hyper-parameters: number-gaussians & scale-initialisation`.
 <details>
       <summary>model-name</b></summary>
 
@@ -212,6 +212,7 @@ memory:
       "bf16-true"
       "64-true"
       See https://lightning.ai/docs/pytorch/stable/common/precision.html
+      Older GPUs are slow when using bf16 so should use 32 instead.
 
 </details>
 <details>
