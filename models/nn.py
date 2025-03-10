@@ -813,7 +813,7 @@ class PixelCNNLayers(nn.Module):
             self.layers.append(Rotate90(k=1, dims=[-2, -1]))
         elif direction == "z":
             self.layers.append(Rotate90(k=1, dims=[-3, -1]))
-        elif direction not in ("x" or "none"):
+        elif direction not in ("x", "none"):
             raise ValueError(
                 f"Direction {direction} not supported. Use 'x', 'y', 'z' or 'none'"
             )
