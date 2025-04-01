@@ -382,6 +382,10 @@ def get_imread_fn(file_type):
             return rgb
 
         imread_fn = read_raw
+    elif file_type == ".tif" or file_type == ".tiff":
+        from tifffile import imread
+
+        imread_fn = imread
     else:
         from skimage import io
 
