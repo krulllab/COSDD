@@ -1,11 +1,17 @@
 import torch
-import torch.nn as nn
-from torch.distributions import Categorical, Normal, MixtureSameFamily
+from torch import nn
 from tqdm import tqdm
 
 from .nn import PixelCNNLayers as Layers
 from .nn import Conv
 from .utils import sample_mixture_model
+
+
+def log_normal_pdf(x, loc, scale):
+    a = -torch.log(scale)
+    b = torch.log(torch.tensor(2, device=loc.device) * torch.pi)
+    c = ((x - loc) / scale)**2
+    return a - 0.5 * (b + c)
 
 
 class PixelCNN(nn.Module):
@@ -88,15 +94,14 @@ class PixelCNN(nn.Module):
         scale = params[:, 2::3].unfold(1, self.n_gaussians, self.n_gaussians)
         scale = nn.functional.softplus(scale)
         return logweights, loc, scale
-
+    
     def loglikelihood(self, x, params):
         logweights, loc, scale = self.extract_params(params)
+        log_p_per_component = log_normal_pdf(x[..., None], loc, scale)
+        log_weighted_p_per_component = logweights + log_p_per_component
+        log_p = torch.logsumexp(log_weighted_p_per_component, dim=-1)
 
-        p = MixtureSameFamily(
-            Categorical(logits=logweights, validate_args=True), Normal(loc=loc, scale=scale, validate_args=True)
-        )
-
-        return p.log_prob(x)
+        return log_p
 
     @torch.no_grad()
     def sample(self, s_code):

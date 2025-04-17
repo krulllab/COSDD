@@ -262,7 +262,6 @@ class Hub(pl.LightningModule):
             print("To monitor losses, enter into your terminal: tensorboard --logdir checkpoints")
 
     def predict_step(self, batch, _):
-        self.eval()
         x = (batch - self.data_mean) / self.data_std
         if self.direct_pred == True:
             if self.direct_denoiser is not None:

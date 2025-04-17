@@ -256,15 +256,17 @@ class LadderVAE(nn.Module):
         kl_sum = 0
         for q, p in zip(q_list, p_list):
             kl_sum = (
-                kl_sum + kl_divergence(q["mu"], q["std"], p["mu"], p["std"]).sum()
+                kl_sum + kl_divergence(q, p).sum()
             )
         return kl_sum
 
 
-def kl_divergence(mu_1, std_1, mu_2, std_2):
-    logstd_1 = torch.log(std_1)
-    logstd_2 = torch.log(std_2)
-    var_ratio = torch.exp(2 * logstd_1) / torch.exp(2 * logstd_2)
-    logstd_diff = logstd_1 - logstd_2
-    t1 = (mu_1 - mu_2).pow(2) / torch.exp(2 * logstd_2)
+def kl_divergence(q, p):
+    q_logstd = torch.log(q["std"])
+    q_mu = q["mu"]
+    p_logstd = torch.log(p["std"])
+    p_mu = p["mu"]
+    var_ratio = torch.exp(q_logstd - p_logstd).pow(2)
+    logstd_diff = q_logstd - p_logstd
+    t1 = (q_mu - p_mu).pow(2) / p["std"].pow(2)
     return 0.5 * (var_ratio + t1 - 1) - logstd_diff
