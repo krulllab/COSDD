@@ -90,6 +90,7 @@ class PixelCNN(nn.Module):
 
     def extract_params(self, params):
         logweights = params[:, 0::3].unfold(1, self.n_gaussians, self.n_gaussians)
+        logweights = nn.functional.log_softmax(logweights, dim=-1)
         loc = params[:, 1::3].unfold(1, self.n_gaussians, self.n_gaussians)
         scale = params[:, 2::3].unfold(1, self.n_gaussians, self.n_gaussians)
         scale = nn.functional.softplus(scale)
