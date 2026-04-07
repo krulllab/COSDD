@@ -1,4 +1,5 @@
 model-name: "my_denoiser"
+use-direct-denoiser: True
 data:
   save-path: "data"
   paths: "data"

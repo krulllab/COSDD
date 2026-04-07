@@ -69,12 +69,13 @@ class UNet(nn.Module):
         self.loss_fn = loss_fn
         self.checkpointed = checkpointed
 
-        # Number of downsampling steps per layer
-        if downsampling is None:
-            downsampling = [0] * self.n_layers
-        self.n_downsample = sum(downsampling)
+        assert downsampling is not None
+        n_dim = len(downsampling[0])
+        self.n_downsample = [0 for _ in range(n_dim)]
+        for i in range(n_dim):
+            for j in range(len(downsampling)):
+                self.n_downsample[i] += downsampling[j][i]
 
-        assert max(downsampling) <= self.blocks_per_layer
         assert len(downsampling) == self.n_layers
 
         self.first_bottom_up = nn.Sequential(
@@ -91,6 +92,7 @@ class UNet(nn.Module):
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
+                n_resample=[0, 0, 0],
                 dimensions=dimensions,
             ),
         )

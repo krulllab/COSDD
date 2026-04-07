@@ -26,7 +26,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
-from torch.distributions import Normal
 
 from .utils import Rotate90, interleave, LinearUpsample
 
@@ -85,7 +84,7 @@ class GateLayer(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        x, gate = x[:, 0::2], x[:, 1::2]
+        x, gate = torch.chunk(x, dim=1, chunks=2)
         x = self.nonlin(x)
         gate = torch.sigmoid(gate)
         return x * gate
@@ -163,6 +162,7 @@ class ResBlockWithResampling(nn.Module):
         c_in,
         c_out,
         resample=None,
+        n_resample=None,
         res_block_kernel=3,
         groups=1,
         gated=True,
@@ -171,10 +171,11 @@ class ResBlockWithResampling(nn.Module):
     ):
         super().__init__()
         assert resample in ["up", "down", None]
+        scale_factor = [2**n for n in n_resample]
 
         if resample == "up":
             self.pre_conv = nn.Sequential(
-                LinearUpsample(scale_factor=2),
+                LinearUpsample(scale_factor=scale_factor),
                 Conv(c_in, c_out, 1, groups=groups, dimensions=dimensions),
             )
         elif resample == "down":
@@ -182,9 +183,8 @@ class ResBlockWithResampling(nn.Module):
                 c_in,
                 c_out,
                 kernel_size=3,
-                stride=2,
                 padding=1,
-                padding_mode="reflect",
+                stride=scale_factor,
                 groups=groups,
                 dimensions=dimensions,
             )
@@ -272,7 +272,7 @@ class BottomUpLayer(nn.Module):
         self,
         n_res_blocks,
         n_filters,
-        downsampling_steps=0,
+        downsampling_steps=[0, 0, 0],
         scale_initialisation=False,
         dimensions=2,
     ):
@@ -280,15 +280,12 @@ class BottomUpLayer(nn.Module):
 
         self.bu_blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if downsampling_steps > 0:
-                resample = "down"
-                downsampling_steps -= 1
             self.bu_blocks.append(
                 ResBlockWithResampling(
                     c_in=n_filters,
                     c_out=n_filters,
-                    resample=resample,
+                    resample="down",
+                    n_resample=downsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
@@ -327,7 +324,7 @@ class TopDownLayer(nn.Module):
         n_res_blocks,
         n_filters,
         is_top_layer=False,
-        upsampling_steps=None,
+        upsampling_steps=[0, 0, 0],
         skip=False,
         scale_initialisation=False,
         dimensions=2,
@@ -339,15 +336,12 @@ class TopDownLayer(nn.Module):
 
         self.blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if upsampling_steps > 0:
-                resample = "up"
-                upsampling_steps -= 1
             self.blocks.append(
                 ResBlockWithResampling(
                     n_filters,
                     n_filters,
-                    resample=resample,
+                    resample="up",
+                    n_resample=upsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
@@ -464,13 +458,13 @@ class NormalStochasticBlock(nn.Module):
             assert p_params.size(1) == 2 * self.c_vars
 
         # Define p(z)
-        p_mu, p_std_ = p_params[:, 0::2], p_params[:, 1::2]
+        p_mu, p_std_ = torch.chunk(p_params, dim=1, chunks=2)
         p_std = nn.functional.softplus(p_std_)
 
         if q_params is not None:
             # Define q(z)
             q_params = self.conv_in_q(q_params)
-            q_mu, q_std_ = q_params[:, 0::2], q_params[:, 1::2]
+            q_mu, q_std_ = torch.chunk(q_params, dim=1, chunks=2)
             q_std = nn.functional.softplus(q_std_)
 
             # Sample from q(z)
@@ -517,7 +511,7 @@ class VAETopDownLayer(nn.Module):
         n_res_blocks,
         n_filters,
         is_top_layer=False,
-        upsampling_steps=None,
+        upsampling_steps=[0, 0, 0],
         stochastic_skip=False,
         learn_top_prior=False,
         top_prior_param_size=None,
@@ -537,15 +531,12 @@ class VAETopDownLayer(nn.Module):
 
         self.deterministic_blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if upsampling_steps > 0:
-                resample = "up"
-                upsampling_steps -= 1
             self.deterministic_blocks.append(
                 ResBlockWithResampling(
                     n_filters,
                     n_filters,
-                    resample=resample,
+                    resample="up",
+                    n_resample=upsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )

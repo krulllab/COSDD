@@ -1,83 +1,104 @@
 import random
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Iterable
+from typing import Sequence, Tuple
+from joblib import Parallel, delayed
 
+from torchvision.transforms.v2 import Transform
 from pytorch_lightning import LightningDataModule
+import torch.nn.functional as F
+from tqdm import tqdm
 import torch
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
 
-def patchify(x, patch_size):
+def patchify(x_list, patch_size):
     """Patchify an n-dimensional array into non-overlapping patches.
 
     If patch_size is not a divisor of the array shape, the edge patches will overlap
     with the adjacent patches.
     Args:
-        x (torch.Tensor): Array to patchify. Shape [S, C, Z | Y | X]
+        x (torch.Tensor): Array to patchify. Shape [C, Z | Y | X]
         patch_size (tuple): Size of the patches. Shape [z | y | x]
     Returns:
-        patches (torch.Tensor): Patchified array. Shape [S * n_patches, C, z | y | x]
+        patches (torch.Tensor): Patchified array. Shape [n_patches, C, z | y | x]
     """
-    dimensions = x.ndim - 2
-    assert (
-        len(patch_size) == dimensions
-    ), "Patch size must have the same number of dimensions as the array"
+    patched = []
+    for x in x_list:
+        dimensions = x.ndim - 1
+        assert (
+            len(patch_size) == dimensions
+        ), "Patch size must have the same number of dimensions as the array"
 
-    remainders = [s % p for s, p in zip(x.shape[2:], patch_size)]
-    remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
-    for d in remainder_dims:
-        pad = torch.narrow(x, d + 2, x.size(d + 2) - patch_size[d], patch_size[d])
-        x = torch.narrow(x, d + 2, 0, x.size(d + 2) - remainders[d])
-        x = torch.cat([x, pad], dim=d + 2)
+        remainders = [s % p for s, p in zip(x.shape[1:], patch_size)]
+        remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
+        for d in remainder_dims:
+            pad = torch.narrow(x, d + 1, x.size(d + 1) - patch_size[d], patch_size[d])
+            x = torch.narrow(x, d + 1, 0, x.size(d + 1) - remainders[d])
+            x = torch.cat([x, pad], dim=d + 1)
 
-    for i in range(dimensions):
-        x = x.unfold(i + 2, patch_size[i], patch_size[i])
-    x = torch.movedim(x, 1, 1 + dimensions)
-    x = x.flatten(0, dimensions)
+        for i in range(dimensions):
+            x = x.unfold(i + 1, patch_size[i], patch_size[i])
+        x = torch.movedim(x, 0, dimensions)
+        x = x.flatten(0, dimensions - 1)
+        patched.extend(x)
 
-    return x
+    return patched
 
 
-def unpatchify(patches, original_shape):
-    """
-    Reverse the patchification process and return the patched tensor to its original shape.
+def unpatchify(x_list, original_shapes, patch_size):
+    unpatched = []
+    for shape in original_shapes:
+        # Original shape details
+        C, *original_dims = shape
+        dimensions = len(original_dims)
 
-    Args:
-        patches (torch.Tensor): Patchified tensor. Shape [S * n_patches, C, z | y | x]
-        original_shape (tuple): The original shape of the tensor before patchification [S, C, Z | Y | X]
-        patch_size (tuple): Size of each patch [z | y | x]
+        # Calculate the number of patches along each spatial dimension
+        num_patches_per_dim = [
+            orig_dim // p + ((orig_dim % p) > 0) * 1
+            for orig_dim, p in zip(original_dims, patch_size)
+        ]
+        num_patches = np.prod(num_patches_per_dim)
+        patches = x_list[:num_patches]
+        if isinstance(patches, list):
+            patches = torch.stack(patches, 0)
+        x_list = x_list[num_patches:]
+        # Reshape patches to the grid of patches
+        patches = torch.unflatten(patches, 0, num_patches_per_dim)
+        patches = torch.movedim(patches, dimensions, 0)
+        for _ in reversed(range(dimensions)):
+            patches = patches.movedim(-1, -dimensions)
+            patches = patches.flatten(-dimensions - 1, -dimensions)
 
-    Returns:
-        torch.Tensor: Reconstructed tensor with shape [S, C, Z | Y | X]
-    """
-    # Original shape details
-    S, C, *original_dims = original_shape
-    dimensions = len(original_dims)
-    patch_size = patches.shape[-dimensions:]
+        remainders = [s % p for s, p in zip(original_dims, patch_size)]
+        remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
+        for d in remainder_dims:
+            pad = torch.narrow(
+                patches, d + 1, patches.size(d + 1) - remainders[d], remainders[d]
+            )
+            patches = torch.narrow(patches, d + 1, 0, patches.size(d + 1) - patch_size[d])
+            patches = torch.cat((patches, pad), dim=d + 1)
+        unpatched.append(patches)
+    return unpatched
 
-    # Calculate the number of patches along each spatial dimension
-    num_patches = [
-        orig_dim // p + ((orig_dim % p) > 0) * 1
-        for orig_dim, p in zip(original_dims, patch_size)
-    ]
-    # Reshape patches to the grid of patches
-    patches = torch.unflatten(patches, 0, [S, *num_patches])
-    # Move the channel axis back
-    patches = patches.movedim(1 + dimensions, 1)
-    for _ in reversed(range(dimensions)):
-        patches = patches.movedim(-1, -dimensions)
-        patches = patches.flatten(-dimensions - 1, -dimensions)
 
-    remainders = [s % p for s, p in zip(original_dims, patch_size)]
-    remainder_dims = [i for i, r in enumerate(remainders) if r > 0]
-    for d in remainder_dims:
-        pad = torch.narrow(
-            patches, d + 2, patches.size(d + 2) - remainders[d], remainders[d]
-        )
-        patches = torch.narrow(patches, d + 2, 0, patches.size(d + 2) - patch_size[d])
-        patches = torch.cat((patches, pad), dim=d + 2)
-    return patches
+def percentile(
+    tensors: Iterable[torch.Tensor],
+    q: float,
+):
+    tensors = [torch.flatten(x) for x in tensors]
+    tensors = torch.cat(tensors)
+    p = np.percentile(tensors, q)
+    return p
+
+
+def mean_std(tensors):
+    tensors = [torch.flatten(x) for x in tensors]
+    tensors = torch.cat(tensors).to(torch.float)
+    mean = torch.mean(tensors)
+    std = torch.std(tensors)
+    return mean, std
 
 
 def autocorrelation(arr, max_lag=25):
@@ -103,50 +124,109 @@ def autocorrelation(arr, max_lag=25):
     return ac
 
 
-class RandomCrop:
-    """
-    Randomly crops n-dimensional tensor to given size.
+class RandomCrop(Transform):
+    def __init__(
+        self,
+        size: Sequence[int],
+        pad_if_needed: bool = True,  # TODO: Could hide size errors
+        padding_value: float = 0.0,
+    ):
+        super().__init__()
+        self.size = tuple(size)
+        self.pad_if_needed = pad_if_needed
+        self.padding_value = padding_value
 
-    Infers input tensor dimensions from len(output_size).
+    # -------------------------
+    # helpers
+    # -------------------------
+    def _spatial_shape(self, x: torch.Tensor) -> Tuple[int, ...]:
+        if x.ndim == len(self.size):
+            return tuple(x.shape)
+        elif x.ndim == len(self.size) + 1:
+            return tuple(x.shape[1:])
+        else:
+            raise ValueError(
+                f"Unsupported input shape {tuple(x.shape)} for crop size {self.size}"
+            )
 
-    Args:
-        output_size (tuple): Desired output size of the crop.
-    """
+    def _pad_if_needed(self, x: torch.Tensor) -> torch.Tensor:
+        spatial = self._spatial_shape(x)
+        pad = []
 
-    def __init__(self, output_size):
-        self.output_size = output_size
-        self.n_dims = len(output_size)
+        for current, target in zip(reversed(spatial), reversed(self.size)):
+            if current < target:
+                total = target - current
+                before = total // 2
+                after = total - before
+            else:
+                before = after = 0
+            pad.extend([before, after])
 
-    def __call__(self, x):
-        x_size = x.size()[1:]
-        assert all(xs >= os for xs, os in zip(x_size, self.output_size))
+        if any(pad):
+            x = F.pad(x, pad, value=self.padding_value)
 
-        start_idxs = [
-            random.randint(0, xs - os) for xs, os in zip(x_size, self.output_size)
-        ]
-        end_idxs = [si + os for si, os in zip(start_idxs, self.output_size)]
-        crop = [slice(0, x.size(0))]
-        crop += [slice(si, ei) for si, ei in zip(start_idxs, end_idxs)]
+        return x
 
-        return x[crop]
+    # -------------------------
+    # v2 API
+    # -------------------------
+    def make_params(self, flat_inputs):
+        x = flat_inputs[0]
+
+        if self.pad_if_needed:
+            x = self._pad_if_needed(x)
+
+        spatial = self._spatial_shape(x)
+
+        offsets = []
+        for current, target in zip(spatial, self.size):
+            if current == target:
+                offsets.append(0)
+            else:
+                offsets.append(random.randint(0, current - target))
+
+        return {"offsets": tuple(offsets)}
+
+    def transform(self, x, params):
+        if not isinstance(x, torch.Tensor):
+            return x
+
+        if self.pad_if_needed:
+            x = self._pad_if_needed(x)
+
+        offsets = params["offsets"]
+
+        slices = []
+        if x.ndim == len(self.size) + 1:
+            slices.append(slice(None))  # channel dim
+
+        for offset, size in zip(offsets, self.size):
+            slices.append(slice(offset, offset + size))
+
+        return x[tuple(slices)]
+
+    def extra_repr(self):
+        return (
+            f"size={self.size}, "
+            f"pad_if_needed={self.pad_if_needed}, "
+            f"padding_value={self.padding_value}"
+        )
 
 
 class TrainDataset(torch.utils.data.Dataset):
-    def __init__(self, images, n_iters=1, transform=None):
+    def __init__(self, images, transform=None):
         self.images = images
         self.n_images = len(images)
-        self.n_iters = n_iters
         self.transform = transform
 
     def __len__(self):
-        return self.n_images * self.n_iters
+        return self.n_images
 
     def __getitem__(self, idx):
-        idx = idx % self.n_images
         image = self.images[idx]
         if self.transform:
             image = self.transform(image)
-        return image
+        return image.to(torch.float32)
 
 
 class DataModule(LightningDataModule):
@@ -164,20 +244,17 @@ class DataModule(LightningDataModule):
         self.train_split = train_split
 
     def setup(self, stage):
-        n_iters = np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
-        rand_crop = RandomCrop(self.rand_crop_size)
+        rand_crop = RandomCrop(self.rand_crop_size, pad_if_needed=True)  # TODO: could hide size errors
         random.shuffle(self.low_snr)
         train_set = self.low_snr[: int(len(self.low_snr) * self.train_split)]
         val_set = self.low_snr[int(len(self.low_snr) * self.train_split) :]
 
         self.train_set = TrainDataset(
             train_set,
-            n_iters=n_iters,
             transform=rand_crop,
         )
         self.val_set = TrainDataset(
             val_set,
-            n_iters=n_iters,
             transform=rand_crop,
         )
 
@@ -207,7 +284,7 @@ class PredictDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image = self.images[idx]
-        return image
+        return image.to(torch.float32)
 
 
 def minimise_mse(x, y):
@@ -232,6 +309,7 @@ def get_defaults(config_dict, predict=False):
     if not predict:
         defaults = {
             "model-name": None,
+            "continue-checkpoint": None,
             "data": {
                 "paths": None,
                 "patterns": None,
@@ -269,6 +347,7 @@ def get_defaults(config_dict, predict=False):
         defaults = {
             "model-name": None,
             "n-samples": 100,
+            "use-direct-denoiser": True,
             "data": {
                 "paths": None,
                 "save-path": None,
@@ -308,6 +387,12 @@ def get_defaults(config_dict, predict=False):
                 raise ValueError(
                     f'Random crop size: {config_dict["train-parameters"]["crop-size"]} is larger than patch size: {config_dict["data"]["patch-size"]}'
                 )
+    if not predict:
+        if config_dict["train-parameters"]["crop-size"] is not None:
+            if config_dict["data"]["number-dimensions"] != len(config_dict["train-parameters"]["crop-size"]):
+                raise ValueError(
+                        f'Random crop size: {config_dict["train-parameters"]["crop-size"]} has different dimensions to data: {config_dict["data"]["number-dimensions"]}'
+                    )
     return config_dict
 
 
@@ -319,18 +404,45 @@ def axes_to_SCZYX(images, axes, n_dimensions):
     target_transpose = [axes.index(d) for d in target_axes]
     missing_axes = [i for i in range(len(axes)) if i not in target_transpose]
     target_transpose = missing_axes + target_transpose
-    images = [i.transpose(target_transpose) for i in images]
-    if "C" not in axes:
-        images = [np.expand_dims(i, -n_dimensions - 1) for i in images]
-    images = [
-        i.reshape(-1, i.shape[-n_dimensions - 1], *i.shape[-n_dimensions:])
-        for i in images
-    ]
-    return images
+
+    # Convert list of arrays to a single array if possible (saves RAM)
+    try:
+        images = np.asarray(images)  # Only if shapes match
+    except ValueError:
+        pass  # fallback if images are of different shapes
+
+    if isinstance(images, np.ndarray):
+        # Transpose once
+        images = images.transpose([0] + [i + 1 for i in target_transpose])  # adjust for batch dim
+
+        # Expand channels if not present
+        if "C" not in axes:
+            images = np.expand_dims(images, -n_dimensions - 1)
+
+        # Reshape in one go
+        new_shape = (
+            -1,
+            images.shape[-n_dimensions - 1],  # C
+            *images.shape[-n_dimensions:],   # ZYX
+        )
+        result = images.reshape(new_shape)
+        result = torch.from_numpy(result)
+    else:
+        # Fallback for irregular shapes
+        result = []
+        for i in images:
+            transposed = i.transpose(target_transpose)
+            if "C" not in axes:
+                transposed = np.expand_dims(transposed, -n_dimensions - 1)
+            reshaped = transposed.reshape(
+                -1, transposed.shape[-n_dimensions - 1], *transposed.shape[-n_dimensions:]
+            )
+            result.extend(reshaped)
+        result = [torch.from_numpy(i) for i in result]
+    return result
 
 
-def SCZYX_to_axes(images, original_axes, original_sizes):
-    n_dimensions = images.ndim - 2
+def SCZYX_to_axes(images, original_axes, original_sizes, n_dimensions):
     spatial_axes = [d for d in "TZYX" if d in original_axes]
     spatial_axes = spatial_axes[-n_dimensions:]
     sample_axes = [d for d in "STZYX" if d in original_axes and d not in spatial_axes]
@@ -345,6 +457,7 @@ def SCZYX_to_axes(images, original_axes, original_sizes):
     images_list = []
     for i in range(len(original_sizes)):
         images_list.append(images[: int(sample_counts[i])])
+        images_list[-1] = np.stack(images_list[-1], 0)
         images = images[int(sample_counts[i]) :]
     images_list = [
         image.reshape(*sample_sizes[i], image.shape[1], *image.shape[-n_dimensions:])
@@ -386,6 +499,10 @@ def get_imread_fn(file_type):
         from tifffile import imread
 
         imread_fn = imread
+    elif file_type == ".gz":
+        import nibabel as nib
+
+        imread_fn = lambda f: nib.load(f).get_fdata()[..., random.randint(0, 49)].astype(np.int16)
     else:
         from skimage import io
 
@@ -476,7 +593,7 @@ def load_data(
     patterns: str | list = "*.tif",
     axes: str = "SYX",
     n_dimensions: Literal[1, 2, 3] = 2,
-    dtype: torch.dtype = torch.float32,
+    return_file_names: bool = False,
 ):
     """Loads data from folders.
 
@@ -517,23 +634,29 @@ def load_data(
     len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
-    images = [imread_fn(f) for f in files]
+    paralleliser = Parallel(n_jobs=32)  # TODO: set for number of available cores
+    images_and_names = paralleliser(
+        delayed(imread_fn)(f)
+        for f in tqdm(files)
+    )
+    images = [i[0] for i in images_and_names]
+    files = [i[1] for i in images_and_names]
+    if return_file_names:
+        file_names = []
+        for file in files:
+            for path in paths:
+                if file.is_relative_to(path):
+                    file_names.append(file.relative_to(path))
+    # images = [imread_fn(f) for f in tqdm(files)]
     original_sizes = []
-    # spatial_dims = [axes.index(i) for i in "XYZT"][:n_dimensions]
-    # spatial_sizes = np.array(images[0].shape)[spatial_dims]
     for i in images:
         original_size = np.array(i.shape)
-        # i_spatial_size = original_size[spatial_dims]
-        # if np.all(i_spatial_size != spatial_sizes):
-        #     _raise(
-        #         ValueError(
-        #             f"Images do not all have the same spatial shape ({i.shape} and {images[0].shape})"
-        #         )
-        #     )
         original_sizes.append(original_size)
     images[0].ndim == len(axes) or _raise(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
     images = axes_to_SCZYX(images, axes, n_dimensions)
-    images = np.concatenate(images, 0).astype(float)
-    return torch.from_numpy(images).to(dtype), original_sizes
+    if not return_file_names:
+        return images, original_sizes
+    else:
+        return images, original_sizes, file_names

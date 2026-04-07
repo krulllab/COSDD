@@ -10,18 +10,21 @@ def get_models(config, n_channels):
     z_dims = [config["hyper-parameters"]["s-code-channels"] // 2] * config[
         "hyper-parameters"
     ]["number-layers"]
-    min_size = min(config["train-parameters"]["crop-size"])
-    num_halves = math.floor(math.log2(min_size)) - 1
-    downsampling = [1] * config["hyper-parameters"]["number-layers"]
-    difference = max(config["hyper-parameters"]["number-layers"] - num_halves, 0)
-    i = 0
-    while difference > 0:
-        for j in range(config["hyper-parameters"]["number-layers"] // 2):
-            downsampling[i + j * 2] = 0
-            difference -= 1
-            if difference == 0:
-                break
-        i += 1
+    find_num_halves = lambda x: math.floor(math.log2(x)) - 1
+    num_halves = [find_num_halves(s) for s in config["train-parameters"]["crop-size"]]
+    find_difference = lambda nh: max(config["hyper-parameters"]["number-layers"] - nh, 0)
+    difference = [find_difference(nh) for nh in num_halves]
+    n_dim = len(config["train-parameters"]["crop-size"])
+    downsampling = [[1 for _ in range(n_dim)] for _ in range(config["hyper-parameters"]["number-layers"])]
+    for i in range(n_dim):
+        j = 0
+        while difference[i] > 0:
+            for k in range(config["hyper-parameters"]["number-layers"] // 2):
+                downsampling[j + k * 2][i] = 0
+                difference[i] -= 1
+                if difference[i] == 0:
+                    break
+            j += 1
 
     lvae = LadderVAE(
         colour_channels=n_channels,
