@@ -94,10 +94,23 @@ def percentile(
 
 
 def mean_std(tensors):
-    tensors = [torch.flatten(x) for x in tensors]
-    tensors = torch.cat(tensors).to(torch.float)
-    mean = torch.mean(tensors)
-    std = torch.std(tensors)
+    count = 0
+    mean = torch.tensor(0.0)
+    M2 = torch.tensor(0.0)
+
+    for tensor in tensors:
+        tensor = torch.flatten(tensor).to(torch.float)
+        batch_count = tensor.numel()
+        batch_mean = torch.mean(tensor)
+        batch_M2 = torch.var(tensor, unbiased=False) * batch_count
+
+        delta = batch_mean - mean
+        new_count = count + batch_count
+        mean += delta * batch_count / new_count
+        M2 += batch_M2 + delta ** 2 * count * batch_count / new_count
+        count = new_count
+
+    std = torch.sqrt(M2 / (count - 1))
     return mean, std
 
 
@@ -214,15 +227,17 @@ class RandomCrop(Transform):
 
 
 class TrainDataset(torch.utils.data.Dataset):
-    def __init__(self, images, transform=None):
+    def __init__(self, images, n_iters=1, transform=None):
         self.images = images
         self.n_images = len(images)
+        self.n_iters = n_iters
         self.transform = transform
 
     def __len__(self):
-        return self.n_images
+        return self.n_images * self.n_iters
 
     def __getitem__(self, idx):
+        idx = idx % self.n_images
         image = self.images[idx]
         if self.transform:
             image = self.transform(image)
@@ -242,6 +257,7 @@ class DataModule(LightningDataModule):
         self.batch_size = batch_size
         self.rand_crop_size = rand_crop_size
         self.train_split = train_split
+        self.n_iters = np.prod(low_snr[0].shape[1:]) // np.prod(rand_crop_size)
 
     def setup(self, stage):
         rand_crop = RandomCrop(self.rand_crop_size, pad_if_needed=True)  # TODO: could hide size errors
@@ -251,10 +267,12 @@ class DataModule(LightningDataModule):
 
         self.train_set = TrainDataset(
             train_set,
+            n_iters=self.n_iters,
             transform=rand_crop,
         )
         self.val_set = TrainDataset(
             val_set,
+            n_iters=self.n_iters,
             transform=rand_crop,
         )
 
@@ -334,7 +352,8 @@ def get_defaults(config_dict, predict=False):
                 "s-code-channels": 64,
                 "number-layers": 8,
                 "scale-initialisation": False,
-                "number-gaussians": 3,
+                "number-components": 3,
+                "discretised": False,
                 "noise-direction": "x",
             },
             "memory": {
@@ -426,7 +445,7 @@ def axes_to_SCZYX(images, axes, n_dimensions):
             *images.shape[-n_dimensions:],   # ZYX
         )
         result = images.reshape(new_shape)
-        result = torch.from_numpy(result)
+        result = [torch.from_numpy(i) for i in result]
     else:
         # Fallback for irregular shapes
         result = []
@@ -499,10 +518,6 @@ def get_imread_fn(file_type):
         from tifffile import imread
 
         imread_fn = imread
-    elif file_type == ".gz":
-        import nibabel as nib
-
-        imread_fn = lambda f: nib.load(f).get_fdata()[..., random.randint(0, 49)].astype(np.int16)
     else:
         from skimage import io
 
@@ -634,11 +649,12 @@ def load_data(
     len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
-    paralleliser = Parallel(n_jobs=32)  # TODO: set for number of available cores
-    images_and_names = paralleliser(
-        delayed(imread_fn)(f)
-        for f in tqdm(files)
-    )
+    # paralleliser = Parallel(n_jobs=32)  # TODO: set for number of available cores
+    # images_and_names = paralleliser(
+    #     delayed(imread_fn)(f)
+    #     for f in tqdm(files)
+    # )
+    images_and_names = [(imread_fn(f), f) for f in tqdm(files)]
     images = [i[0] for i in images_and_names]
     files = [i[1] for i in images_and_names]
     if return_file_names:

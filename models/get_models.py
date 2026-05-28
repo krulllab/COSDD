@@ -44,7 +44,7 @@ def get_models(config, n_channels):
         noise_direction=config["hyper-parameters"]["noise-direction"],
         n_filters=64,
         n_layers=4,
-        n_gaussians=config["hyper-parameters"]["number-gaussians"],
+        n_components=config["hyper-parameters"]["number-components"],
         dimensions=config["data"]["number-dimensions"],
     )
 
