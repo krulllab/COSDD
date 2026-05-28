@@ -74,7 +74,7 @@ class DVLAE(pl.LightningModule):
         vae_optimizer = optim.Adamax(vae_params)
         optimizers.append(vae_optimizer)
         vae_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            vae_optimizer, factor=0.1, patience=50, verbose=True
+            vae_optimizer, factor=0.1, patience=50
         )
         schedulers.append(vae_scheduler)
 
@@ -82,7 +82,7 @@ class DVLAE(pl.LightningModule):
         sd_optimizer = optim.Adamax(sd_params)
         optimizers.append(sd_optimizer)
         sd_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            sd_optimizer, factor=0.1, patience=50, verbose=True
+            sd_optimizer, factor=0.1, patience=50
         )
         schedulers.append(sd_scheduler)
 
