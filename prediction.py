@@ -140,6 +140,6 @@ if not os.path.exists(save_path):
 print(f"Saving denoised images to {save_path}")
 for i, image in enumerate(denoised):
     file_name = file_names[i]
-    save_file_name = save_path / (str(file_name) + ".tif")
+    save_file_name = save_path / str(file_name)
     save_file_name.parent.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(save_file_name, image)
