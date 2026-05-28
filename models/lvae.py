@@ -77,11 +77,14 @@ class LadderVAE(nn.Module):
         self.checkpointed = checkpointed
 
         # Number of downsampling steps per layer
-        if downsampling is None:
-            downsampling = [0] * self.n_layers
-        self.n_downsample = sum(downsampling)
 
-        assert max(downsampling) <= self.blocks_per_layer
+        assert downsampling is not None
+        n_dim = len(downsampling[0])
+        self.n_downsample = [0 for _ in range(n_dim)]
+        for i in range(n_dim):
+            for j in range(len(downsampling)):
+                self.n_downsample[i] += downsampling[j][i]
+
         assert len(downsampling) == self.n_layers
 
         self.first_bottom_up = nn.Sequential(
@@ -98,6 +101,7 @@ class LadderVAE(nn.Module):
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
+                n_resample=[0, 0, 0],
                 scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             ),
@@ -238,8 +242,8 @@ class LadderVAE(nn.Module):
 
     def get_top_prior_param_size(self):
         padded_size = get_padded_size(self.img_size, self.n_downsample)
-        dwnsc = 2**self.n_downsample
-        top_prior_size = [s // dwnsc for s in padded_size]
+        dwnsc = [2**nd for nd in self.n_downsample]
+        top_prior_size = [s // d for s, d in zip(padded_size, dwnsc)]
         c = self.z_dims[-1] * 2  # mu and log-sigma
         top_prior_size = [1, c] + top_prior_size
 

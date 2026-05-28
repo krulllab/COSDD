@@ -1,3 +1,4 @@
+from pathlib import Path
 import yaml
 import os
 import argparse
@@ -9,7 +10,6 @@ warnings.filterwarnings("ignore", ".*does not have many workers.*")
 import torch
 from pytorch_lightning.plugins.environments import LightningEnvironment
 import pytorch_lightning as pl
-import numpy as np
 from tqdm import tqdm
 import tifffile
 
@@ -37,25 +37,25 @@ with open(os.path.join(checkpoint_path, "training-config.yaml")) as f:
     train_cfg = yaml.load(f, Loader=yaml.FullLoader)
 
 print("Loading data...")
-low_snr, original_sizes = utils.load_data(
-    cfg["data"]["paths"],
-    cfg["data"]["patterns"],
-    cfg["data"]["axes"],
-    cfg["data"]["number-dimensions"],
+low_snr, original_sizes, file_names = utils.load_data(
+    paths=cfg["data"]["paths"],
+    patterns=cfg["data"]["patterns"],
+    axes=cfg["data"]["axes"],
+    n_dimensions=cfg["data"]["number-dimensions"],
+    return_file_names=True,
 )
-low_snr_original_shape = low_snr.shape
+low_snr_original_shapes = [l.shape for l in low_snr]
 if cfg["data"]["patch-size"] is not None:
     # Split data into non-overlapping patches
     low_snr = utils.patchify(low_snr, patch_size=cfg["data"]["patch-size"])
-print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
     # Clip data values outside of 1st and 99th percentiles
     print("Clippping min...")
-    clip_min = np.percentile(low_snr, 1)
+    clip_min = utils.percentile(low_snr, 1)
     print("Clippping max...")
-    clip_max = np.percentile(low_snr, 99)
-    low_snr = torch.clamp(low_snr, clip_min, clip_max)
+    clip_max = utils.percentile(low_snr, 99)
+    low_snr = [torch.clamp(l, clip_min, clip_max) for l in low_snr]
 
 # Use data to create pytorch dataset
 predict_set = utils.PredictDataset(low_snr)
@@ -68,7 +68,7 @@ predict_loader = torch.utils.data.DataLoader(
 )
 
 # Load models with trained parameters
-lvae, ar_decoder, s_decoder, direct_denoiser = get_models(train_cfg, low_snr.shape[1])
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(train_cfg, low_snr[0].shape[0])
 
 checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
 hub = Hub.load_from_checkpoint(
@@ -81,7 +81,9 @@ hub = Hub.load_from_checkpoint(
 
 if isinstance(cfg["memory"]["gpu"], int):
     cfg["memory"]["gpu"] = [cfg["memory"]["gpu"]]
-if direct_denoiser is not None:
+# TODO: does this work for all possible scenarios?
+if cfg["use-direct-denoiser"]:
+    assert hub.direct_denoiser is not None, "Direct denoiser not trained. Set `use-direct-denoiser: False`."
     # If the direct denoiser was trained, uses it for inference
     hub.direct_pred = True
     predictor = pl.Trainer(
@@ -93,8 +95,8 @@ if direct_denoiser is not None:
         precision=cfg["memory"]["precision"],
         plugins=[LightningEnvironment()],
     )
-    direct = predictor.predict(hub, predict_loader)
-    denoised = torch.cat(direct, dim=0)
+    denoised = predictor.predict(hub, predict_loader)
+    denoised = torch.cat(denoised, dim=0)
 else:
     # If direct denoiser was not trained, randomly sample solutions and average them
     hub.direct_pred = False
@@ -115,25 +117,29 @@ else:
 
     samples = torch.stack(samples, dim=1)
     denoised = torch.mean(samples, dim=1)
-if denoised.shape != low_snr_original_shape:
-    # If data was patched into non-overlapping windows, restore original shape.
-    denoised = utils.unpatchify(denoised, original_shape=low_snr_original_shape)
 if denoised.dtype == torch.bfloat16:
     # bfloat16 can't be saved as tiff, so switches to float32
     denoised = denoised.float()
+if cfg["data"]["patch-size"] is not None:
+    # If data was patched into non-overlapping windows, restore original shape.
+    denoised = utils.unpatchify(denoised, original_shapes=low_snr_original_shapes, patch_size=cfg["data"]["patch-size"])
+denoised = [d.numpy() for d in denoised]
+
 # Restore dimensions to how they were stored before converting to pytorch [S, C, Z | Y | X]
 denoised = utils.SCZYX_to_axes(
-    denoised.numpy(), original_axes=cfg["data"]["axes"], original_sizes=original_sizes
+    denoised, original_axes=cfg["data"]["axes"], original_sizes=original_sizes, n_dimensions=cfg["data"]["number-dimensions"]
 )
 
 # Saves denoised images using date and time as directory name
 # Each image that was an individual file before denoising will be saved as an individual denoised image
 current_time = time.strftime("%d-%m-%y_%H-%M-%S", time.localtime())
-save_path = os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}")
+save_path = Path(os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}"))
 if not os.path.exists(save_path):
     print(f"Creating directory: {save_path}")
     os.makedirs(save_path)
 print(f"Saving denoised images to {save_path}")
 for i, image in enumerate(denoised):
-    save_file_name = os.path.join(save_path, f"denoised-{str(i)}.tif")
+    file_name = file_names[i]
+    save_file_name = save_path / str(file_name)
+    save_file_name.parent.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(save_file_name, image)

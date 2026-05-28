@@ -1,10 +1,12 @@
 model-name: "my_denoiser"
+use-direct-denoiser: True
 data:
   save-path: "data"
   paths: "data"
   patterns: "*.tif"
   axes: "SYX"
   number-dimensions: 2
+  # Set a patch size if raw images are all different shapes
   patch-size: null
   clip-outliers: False
 predict-parameters:
