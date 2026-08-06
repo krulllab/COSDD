@@ -1,9 +1,8 @@
 import yaml
 import os
 import argparse
-import math
-import random
 import warnings
+import math
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
@@ -12,7 +11,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import LightningEnvironment
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
-import numpy as np
 
 import utils
 from models.get_models import get_models
@@ -46,7 +44,6 @@ low_snr, _ = utils.load_data(
     patterns=cfg["data"]["patterns"],
     axes=cfg["data"]["axes"],
     n_dimensions=cfg["data"]["number-dimensions"],
-    dtype=dtype,
 )
 if cfg["data"]["patch-size"] is not None:
     # Split data into non-overlapping patches
@@ -59,31 +56,18 @@ if cfg["data"]["patch-size"] is not None:
 # This will try to do so automatically, but should be done manually by setting data: patch-size configuration option.
 if int(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(low_snr):
     val_split = round(1 - cfg["train-parameters"]["training-split"], 3)
-    print(
-        f'Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
+    raise Exception(
+        f'Data of length: {len(low_snr)} cannot be split {cfg["train-parameters"]["training-split"]}/\
           {val_split} train/validation along sample axis.'
     )
-    print("Automatically patching data...")
-    val_patch_size = [
-        math.ceil(
-            low_snr.shape[-i] * (val_split ** (1 / cfg["data"]["number-dimensions"]))
-        )
-        for i in reversed(range(1, cfg["data"]["number-dimensions"] + 1))
-    ]
-    low_snr = utils.patchify(low_snr, patch_size=val_patch_size)
-print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
     # To avoid outliers causing problems, clip data values outside of 1st and 99th percentiles
     print("Clippping min...")
-    clip_min = np.percentile(low_snr, 1)
+    clip_min = utils.percentile(low_snr, 1)
     print("Clippping max...")
-    clip_max = np.percentile(low_snr, 99)
-    low_snr = torch.clamp(low_snr, clip_min, clip_max)
-
-print(
-    f'Effective batch size: {cfg["train-parameters"]["batch-size"] * cfg["train-parameters"]["number-grad-batches"]}'
-)
+    clip_max = utils.percentile(low_snr, 99)
+    low_snr = [torch.clamp(l, clip_min, clip_max) for l in low_snr]
 
 datamodule = utils.DataModule(
     low_snr=low_snr,
@@ -95,12 +79,10 @@ data_max = low_snr.max()
 data_min = low_snr.min()
 print(f"data min {data_min} data max {data_max}")
 # Load models
-lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1], data_max=data_max, data_min=data_min)
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr[0].shape[0], data_max=data_max, data_min=data_min)
 
 # Each channel is normalised individually.
-mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
-data_mean = low_snr.mean(mean_std_dims, keepdims=True).to(dtype)
-data_std = low_snr.std(mean_std_dims, keepdims=True).to(dtype)
+data_mean, data_std = utils.mean_std(low_snr)
 
 if cfg["pretrained-path"] is not None:
     hub = Hub(
@@ -152,11 +134,12 @@ trainer = pl.Trainer(
 # Train model
 try:
     trainer.fit(hub, datamodule=datamodule, ckpt_path=cfg["continue-checkpoint"])
+    trainer.fit(hub, datamodule=datamodule, ckpt_path=cfg["continue-checkpoint"])
 except KeyboardInterrupt:
     print("KeyboardInterupt")
 finally:
     # Save trained model
-    trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
+    trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"), weights_only=True)
     with open(os.path.join(checkpoint_path, "training-config.yaml"), "w") as f:
     # Save hyperparameters to load models again later
         yaml.dump(cfg, f, default_flow_style=False)

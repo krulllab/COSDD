@@ -7,9 +7,9 @@ data:
   patch-size: null
   clip-outliers: False
 train-parameters:
-  max-time: "00:12:00:00"
+  max-time: "00:24:00:00"
   max-epochs: 1000
-  patience: 50
+  patience: 100
   batch-size: 4
   number-grad-batches: 4
   crop-size: [256, 256]
@@ -18,12 +18,12 @@ train-parameters:
   direct-denoiser-loss: "MSE"
 hyper-parameters:
   noise-direction: "x"
-  s-code-channels: 64
+  s-code-channels: 128
   scale-initialisation: False
-  number-layers: 8
-  number-components: 5
+  number-layers: 14
+  number-components: 8
   discretised: False
 memory:
   precision: "bf16-mixed"
-  checkpointed: True
+  checkpointed: False
   gpu: [0]

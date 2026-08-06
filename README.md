@@ -16,18 +16,26 @@ Please checkout the WACV_reproducibility branch to reproduce those results.
 
 ## Getting started
 ### Environment
-It is recommended to install the dependencies in a conda environment. If you haven't already, install miniconda on your system by following this [link](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html).<br>
-Once conda is installed, create and activate an environment by entering these lines into a command line interface:<br>
-1. `conda create --name cosdd python=3.12`
-2. `conda activate cosdd`
+It is recommended to install the dependencies in a conda environment. If you haven't already, install miniconda on your system by following this link
 
-Next, install PyTorch and torchvision for your system by following this [link](https://pytorch.org/get-started/locally/).<br> 
+1. https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html<br>
+
+Once conda is installed, create and activate an environment by entering these lines into a command line interface:<br>
+
+2. `conda create --name cosdd python=3.12`
+3. `conda activate cosdd`
+
+Next, install PyTorch and torchvision for your system by following this link:<br>
+
+4. https://pytorch.org/get-started/locally/<br> 
+
 After that, you're ready to install the dependencies for this repository:<br>
-`pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
+
+5. `pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
 
 ### Data
 The tutorial notebook training.ipynb will download an example dataset and store it as a .tiff in `./data`.
-By default, this repo uses `skimage.io.imread` to load images, which works for common image types including .tiff.
+The data loader will try choose a library for loading images automatically.
 If your data is unsupported, edit `utils.get_imread_fn` to use a different function.
 The function should return images as a numpy array.
 

@@ -57,8 +57,8 @@ def get_padded_size(size, n_downsc):
     Returns:
         tuple: The padded size of the image as a tuple of (padded_height, padded_width).
     """
-    dwnsc = 2 ** n_downsc
-    padded_size = [((s - 1) // dwnsc + 1) * dwnsc for s in size]
+    dwnsc = [2 ** d for d in n_downsc]
+    padded_size = [((s - 1) // d + 1) * d for s, d in zip(size, dwnsc)]
 
     return padded_size
 
@@ -87,7 +87,7 @@ def spatial_pad_crop(x, target_size):
     x_size = x.size()[2:]
     crop = [slice(0, x.size(0)), slice(0,  x.size(1))]
     crop += [slice(d[0], xs - d[1]) for d, xs in zip(crop_delta, x_size)]
-    return x[crop]
+    return x[tuple(crop)]
 
 
 class LinearUpsample(nn.Module):
