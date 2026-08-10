@@ -101,7 +101,7 @@ class LadderVAE(nn.Module):
                 c_in=n_filters,
                 c_out=n_filters,
                 gated=False,
-                n_resample=[0, 0, 0],
+                n_resample=[0] * dimensions,
                 scale_initialisation=scale_initialisation,
                 dimensions=dimensions,
             ),

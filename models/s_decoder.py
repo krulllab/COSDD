@@ -1,8 +1,14 @@
+import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
 from .nn import Conv
+from .probability_density_functions import DiscreteLogistic
+
+
+def softplus(x, beta):
+    return 1/beta * torch.log(1 + torch.exp(beta * x))
 
 
 class SDecoder(nn.Module):
@@ -24,11 +30,18 @@ class SDecoder(nn.Module):
         n_filters=64,
         n_layers=4,
         kernel_size=3,
+        discretised=False,
+        data_min=0,
+        data_max=255,
+        num_vals=256,
         checkpointed=False,
         dimensions=2,
     ):
         super().__init__()
         self.checkpointed = checkpointed
+        self.discretised = discretised
+        if self.discretised:
+            self.discrete_logistic_pmf = DiscreteLogistic(min_bound=data_min, max_bound=data_max, num_vals=num_vals)
         if n_layers < 2:
             raise ValueError("n_layers must be greater than 2")
 
@@ -70,6 +83,16 @@ class SDecoder(nn.Module):
                 dimensions=dimensions,
             )
         )
+        if self.discretised:
+            a = torch.tensor(0.1, requires_grad=True)
+            b = torch.tensor(10.0, requires_grad=True)
+            beta = torch.tensor(1.0, requires_grad=True)
+            a = torch.nn.Parameter(a, requires_grad=True)
+            b = torch.nn.Parameter(b, requires_grad=True)
+            beta = torch.nn.Parameter(beta, requires_grad=True)
+            self.register_parameter("a", a)
+            self.register_parameter("b", b)
+            self.register_parameter("beta", beta)
 
     def forward(self, s_code):
         for i, layer in enumerate(self.net):
@@ -83,6 +106,16 @@ class SDecoder(nn.Module):
                 s_code = layer(s_code)
         return s_code
 
-    @staticmethod
-    def loss(x, y):
-        return F.mse_loss(x, y, reduction="none")
+    def loss(self, x, s_hat):
+        if self.discretised:
+            var = softplus(s_hat.detach() + self.b, beta=self.beta) * self.a
+            log_scale = 0.5 * torch.log(var)
+            # Add mixture dimension even though we're only using one component
+            s_hat = s_hat[..., None]
+            log_scale = log_scale[..., None]
+            mixture_logits = torch.ones_like(s_hat)
+            loss = -self.discrete_logistic_pmf(x, s_hat, log_scale, mixture_logits)
+        else:
+            loss = F.mse_loss(x, s_hat, reduction="none")
+
+        return loss

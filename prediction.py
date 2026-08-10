@@ -43,12 +43,6 @@ low_snr, original_sizes, file_names = utils.load_data(
     axes=cfg["data"]["axes"],
     n_dimensions=cfg["data"]["number-dimensions"],
     return_file_names=True,
-low_snr, original_sizes, file_names = utils.load_data(
-    paths=cfg["data"]["paths"],
-    patterns=cfg["data"]["patterns"],
-    axes=cfg["data"]["axes"],
-    n_dimensions=cfg["data"]["number-dimensions"],
-    return_file_names=True,
 )
 low_snr_original_shapes = [l.shape for l in low_snr]
 if cfg["data"]["patch-size"] is not None:
@@ -90,31 +84,27 @@ if isinstance(cfg["memory"]["gpu"], int):
 # TODO: does this work for all possible scenarios?
 if cfg["use-direct-denoiser"]:
     assert hub.direct_denoiser is not None, "Direct denoiser not trained. Set `use-direct-denoiser: False`."
-    # If the direct denoiser was trained, uses it for inference
+    enable_progress_bar = True
     hub.direct_pred = True
-    predictor = pl.Trainer(
-        accelerator="gpu",
-        devices=cfg["memory"]["gpu"],
-        enable_progress_bar=True,
-        enable_checkpointing=False,
-        logger=False,
-        precision=cfg["memory"]["precision"],
-        plugins=[LightningEnvironment()],
-    )
+else:
+    enable_progress_bar = False
+    hub.direct_pred = False
+
+predictor = pl.Trainer(
+    accelerator="gpu",
+    devices=cfg["memory"]["gpu"],
+    enable_progress_bar=enable_progress_bar,
+    enable_checkpointing=False,
+    logger=False,
+    plugins=[LightningEnvironment()],
+    precision=cfg["memory"]["precision"],
+)
+
+if cfg["use-direct-denoiser"]:
     denoised = predictor.predict(hub, predict_loader)
     denoised = torch.cat(denoised, dim=0)
 else:
     # If direct denoiser was not trained, randomly sample solutions and average them
-    hub.direct_pred = False
-    predictor = pl.Trainer(
-        accelerator="gpu",
-        devices=cfg["memory"]["gpu"],
-        enable_progress_bar=False,
-        enable_checkpointing=False,
-        logger=False,
-        plugins=[LightningEnvironment()],
-        precision=cfg["memory"]["precision"],
-    )
     samples = []
     for _ in tqdm(range(cfg["n-samples"])):
         out = predictor.predict(hub, predict_loader)

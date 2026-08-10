@@ -2,7 +2,6 @@ import yaml
 import os
 import argparse
 import warnings
-import math
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
@@ -29,15 +28,6 @@ with open(args.config_file) as f:
 # Sets configuration options not given to defaults and checks given arguments
 cfg = utils.get_defaults(cfg)
 
-if "64" in str(cfg["memory"]["precision"]):
-    dtype = torch.float64
-elif "32" in str(cfg["memory"]["precision"]):
-    dtype = torch.float32
-elif "bf16" in str(cfg["memory"]["precision"]):
-    dtype = torch.bfloat16
-elif "16" in str(cfg["memory"]["precision"]):
-    dtype = torch.float16
-
 print("Loading data...")
 low_snr, _ = utils.load_data(
     paths=cfg["data"]["paths"],
@@ -53,7 +43,6 @@ if cfg["data"]["patch-size"] is not None:
 # are used for training validation.
 # If there are too few images for the chosen training/validation split (e.g. 0.9/0.1), individual images will
 # have to be broken up into patches, and the patches randomly split into training/validation sets.
-# This will try to do so automatically, but should be done manually by setting data: patch-size configuration option.
 if int(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(low_snr):
     val_split = round(1 - cfg["train-parameters"]["training-split"], 3)
     raise Exception(
@@ -75,40 +64,26 @@ datamodule = utils.DataModule(
     rand_crop_size=cfg["train-parameters"]["crop-size"],
     train_split=cfg["train-parameters"]["training-split"],
 )
-data_max = low_snr.max()
-data_min = low_snr.min()
-print(f"data min {data_min} data max {data_max}")
-# Load models
-lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr[0].shape[0], data_max=data_max, data_min=data_min)
-
-# Each channel is normalised individually.
 data_mean, data_std = utils.mean_std(low_snr)
-
-if cfg["pretrained-path"] is not None:
-    hub = Hub(
-        vae=lvae,
-        ar_decoder=ar_decoder,
-        s_decoder=s_decoder,
-        direct_denoiser=None,
-        data_mean=data_mean,
-        data_std=data_std,
-        n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
-        checkpointed=cfg["memory"]["checkpointed"],
-    )
-    params = torch.load(cfg["pretrained-path"], weights_only=True)
-    hub.load_state_dict(params, strict=False)
-    hub.direct_denoiser = direct_denoiser
+if cfg["hyper-parameters"]["discretised"]:
+    data_min, data_max = utils.min_max_dtype(low_snr)
+    print(f"data min: {data_min}, data max: {data_max}")
+    data_min, data_max, num_vals = utils.normalise_min_max(data_min, data_max, data_mean, data_std)
 else:
-    hub = Hub(
-        vae=lvae,
-        ar_decoder=ar_decoder,
-        s_decoder=s_decoder,
-        direct_denoiser=None,
-        data_mean=data_mean,
-        data_std=data_std,
-        n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
-        checkpointed=cfg["memory"]["checkpointed"],
-    )
+    data_min = data_max = None
+# Load models
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr[0].shape[0], data_max=data_max, data_min=data_min, num_vals=num_vals)
+
+hub = Hub(
+    vae=lvae,
+    ar_decoder=ar_decoder,
+    s_decoder=s_decoder,
+    direct_denoiser=direct_denoiser,
+    data_mean=data_mean,
+    data_std=data_std,
+    n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
+    checkpointed=cfg["memory"]["checkpointed"],
+)
 
 checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
 logger = TensorBoardLogger(checkpoint_path)
@@ -128,12 +103,11 @@ trainer = pl.Trainer(
     max_epochs=cfg["train-parameters"]["max-epochs"],
     max_time=cfg["train-parameters"]["max-time"],
     callbacks=callbacks,
-    plugins=[LightningEnvironment()],
+    plugins=[LightningEnvironment()],  # TODO: can this break on some setups?
     precision=cfg["memory"]["precision"],
 )
 # Train model
 try:
-    trainer.fit(hub, datamodule=datamodule, ckpt_path=cfg["continue-checkpoint"])
     trainer.fit(hub, datamodule=datamodule, ckpt_path=cfg["continue-checkpoint"])
 except KeyboardInterrupt:
     print("KeyboardInterupt")

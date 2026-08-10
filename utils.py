@@ -9,6 +9,7 @@ from pytorch_lightning import LightningDataModule
 import torch.nn.functional as F
 from tqdm import tqdm
 import torch
+from torch import Tensor
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
@@ -112,6 +113,26 @@ def mean_std(tensors):
 
     std = torch.sqrt(M2 / (count - 1))
     return mean, std
+
+
+def min_max_dtype(tensors: list[Tensor]):
+    min_ = torch.inf
+    max_ = -torch.inf
+
+    for tensor in tensors:
+        if torch.is_floating_point(tensor):
+            raise TypeError("Data must integer dtype for a discretised noise model")
+        max_ = max(max_, tensor.float().max())
+        min_ = min(min_, tensor.float().min())
+    return min_, max_
+
+
+def normalise_min_max(data_min, data_max, data_mean, data_std):
+    num_vals = data_max - data_min + 1
+    normalise_fn = lambda x: (x - data_mean) / data_std
+    data_min = normalise_fn(data_min)
+    data_max = normalise_fn(data_max)
+    return data_min, data_max, num_vals
 
 
 def autocorrelation(arr, max_lag=25):
