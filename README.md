@@ -27,7 +27,7 @@ Once conda is installed, create and activate an environment by entering these li
 
 Next, install PyTorch and torchvision for your system by following this link:<br>
 
-4. https://pytorch.org/get-started/locally/<br> 
+4. https://pytorch.org/get-stparted/locally/<br> 
 
 After that, you're ready to install the dependencies for this repository:<br>
 

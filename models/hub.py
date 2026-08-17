@@ -217,6 +217,13 @@ class Hub(pl.LightningModule):
                 mmse = mmse[:, :, 0]
                 if direct is not None:
                     direct = direct[:, :, 0]
+            elif d == 4:
+                # Show the first slice of first frame as image
+                x = x[:, :, 0, 0]
+                samples = samples[:, :, 0, 0]
+                mmse = mmse[:, :, 0, 0]
+                if direct is not None:
+                    direct = direct[:, :, 0, 0]
             # Show 2D images. Only shows first 3 channels
             self.log_image(x[0, :3].cpu().float().numpy(), "inputs/noisy")
             self.log_image(samples[0, :3].cpu().float().numpy(), "outputs/sample 1")

@@ -667,8 +667,8 @@ def load_data(
     isinstance(n_dimensions, int) or _raise(
         TypeError(f"n_dimensions must be int but is {type(n_dimensions)}")
     )
-    1 <= n_dimensions <= 3 or _raise(
-        ValueError(f"n_dimensions must be 1, 2 or 3 but is {n_dimensions}")
+    1 <= n_dimensions <= 4 or _raise(
+        ValueError(f"n_dimensions must be 1, 2, 3 or 4 but is {n_dimensions}")
     )
     axes = axes_check_and_normalize(axes, n_dimensions)
     files = []

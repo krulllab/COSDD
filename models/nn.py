@@ -27,7 +27,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
-from .utils import Rotate90, interleave, LinearUpsample
+from .utils import Rotate90, interleave, LinearUpsample, Conv4d, BatchNorm4d
 
 
 class Conv(nn.Module):
@@ -67,7 +67,12 @@ class Conv(nn.Module):
             "device": device,
             "dtype": dtype,
         }
-        conv = getattr(nn, f"Conv{dimensions}d")
+        if dimensions < 4:
+            conv = getattr(nn, f"Conv{dimensions}d")
+        elif dimensions == 4:
+            conv = Conv4d
+        else:
+            raise NotImplementedError
         self.conv = conv(**self.args)
 
     def forward(self, x):
@@ -112,7 +117,10 @@ class ResidualBlock(nn.Module):
         else:
             self.rescale = 1.0
 
-        BatchNorm = getattr(nn, f"BatchNorm{dimensions}d")
+        if dimensions <= 3:
+            BatchNorm = getattr(nn, f"BatchNorm{dimensions}d")
+        elif dimensions == 4:
+            BatchNorm = BatchNorm4d
 
         self.block = nn.Sequential()
         for _ in range(2):
@@ -657,6 +665,7 @@ class ShiftedConv(nn.Module):
         self.dilation = dilation
         self.groups = groups
         self.first = first
+        self.dimensions = dimensions
 
         shift = dilation * (kernel_size - 1)
         self.padding = (shift, 0)
@@ -671,16 +680,21 @@ class ShiftedConv(nn.Module):
             dimensions=dimensions,
         )
 
-        kernel_mask = torch.ones((1, 1, *kernel_size))
+        if dimensions <= 3:
+            kernel_mask = torch.ones((1, 1, *kernel_size))
+        elif dimensions == 4:
+            kernel_mask = torch.ones((1, 1, *kernel_size[1:]))
         if self.first:
             kernel_mask[..., -1] = 0
         self.register_buffer("kernel_mask", kernel_mask)
 
     def forward(self, x):
-        if not hasattr(self, "conv"):
-            self.lazy_dims_init(x)
         x = F.pad(x, self.padding)
-        self.conv.conv.weight.data *= self.kernel_mask
+        if self.dimensions <= 3:
+            self.conv.conv.weight.data *= self.kernel_mask
+        elif self.dimensions == 4:
+            for conv3d in self.conv.conv.conv3d_layers:
+                conv3d.weight.data *= self.kernel_mask
         x = self.conv(x)
         return x
 
