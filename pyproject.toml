@@ -16,12 +16,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
+    "imageio>=2.16",
     "joblib",
     "matplotlib>=3.11.2",
     "numpy",
     "pytorch-lightning>=2.6.6",
     "pyyaml",
-    "scikit-image>=0.26.0",
     "scikit-learn>=1.9.1",
     "tensorboard>=2.21.0",
     "tifffile>=2026.10.15",

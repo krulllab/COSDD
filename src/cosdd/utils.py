@@ -519,9 +519,9 @@ def get_imread_fn(file_type):
 
         imread_fn = imread
     else:
-        from skimage import io
+        import imageio.v3 as iio
 
-        imread_fn = io.imread
+        imread_fn = iio.imread
     return imread_fn
 
 
