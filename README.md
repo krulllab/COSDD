@@ -52,7 +52,6 @@ To train, run:<br>
 
 After training, use the model to denoise by running:<br>
 `cosdd-predict example-predict-config.yaml`<br>
-Trained models are saved in `./checkpoints/<model-name>` and `cosdd-predict` looks for them there.<br>
 The prediction command will save results in a directory called denoised-\<date\>_\<time\>, with a file called denoised-\<i\>.tif for each input file.
 
 ## Yaml training config file options
