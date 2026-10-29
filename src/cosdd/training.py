@@ -74,7 +74,6 @@ def main():
     # Load models
     lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr[0].shape[0])
 
-    # Each channel is normalised individually.
     data_mean, data_std = utils.mean_std(low_snr)
 
     hub = Hub(
