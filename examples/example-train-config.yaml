@@ -1,6 +1,6 @@
 model-name: "my_denoiser"
 data:
-  paths: "data"
+  paths: "./data"
   patterns: "*.tif"
   axes: "SYX"
   number-dimensions: 2
@@ -24,6 +24,6 @@ hyper-parameters:
   number-components: 8
   discretised: False
 memory:
-  precision: "bf16-mixed"
+  precision: "32"
   checkpointed: False
   gpu: [0]

@@ -1,8 +1,8 @@
 model-name: "my_denoiser"
 use-direct-denoiser: True
 data:
-  save-path: "data"
-  paths: "data"
+  save-path: "./data"
+  paths: "./data"
   patterns: "*.tif"
   axes: "SYX"
   number-dimensions: 2
@@ -12,5 +12,5 @@ data:
 predict-parameters:
   batch-size: 1
 memory:
-  precision: "bf16-mixed"
+  precision: "32"
   gpu: [0]

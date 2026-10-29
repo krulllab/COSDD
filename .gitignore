@@ -1,6 +1,6 @@
-checkpoints/**
-results/**
-data/**
+**/checkpoints/
+**/results/
+**/data/
 **.tif
 **.tiff
 **.ipynb_checkpoints
@@ -10,3 +10,7 @@ data/**
 **/lightning_logs/
 
 **DS_Store
+.venv/
+*.egg-info/
+dist/
+build/

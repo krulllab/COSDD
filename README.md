@@ -15,44 +15,45 @@ There have been updates to this code since the results in the WACV paper were ob
 Please checkout the WACV_reproducibility branch to reproduce those results.
 
 ## Getting started
-### Environment
-It is recommended to install the dependencies in a conda environment. If you haven't already, install miniconda on your system by following this link
+### Installation
+COSDD requires Python 3.12 or newer.
+It is recommended to install it in a fresh virtual environment, e.g. with conda:
 
-1. https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html<br>
+1. `conda create --name cosdd python=3.12`
+2. `conda activate cosdd`
 
-Once conda is installed, create and activate an environment by entering these lines into a command line interface:<br>
+If you need a specific CUDA build of PyTorch, install PyTorch and torchvision first by following https://pytorch.org/get-started/locally/.
+Then install COSDD from the root of this repository:
 
-2. `conda create --name cosdd python=3.12`
-3. `conda activate cosdd`
+3. `pip install .`
 
-Next, install PyTorch and torchvision for your system by following this link:<br>
+To also run the tutorial notebooks, install the `notebooks` extra: `pip install ".[notebooks]"`.
+Optional loaders for .czi and camera raw files are available through the `czi` and `raw` extras.
+For development, use an editable install: `pip install -e ".[notebooks]"`.
 
-4. https://pytorch.org/get-started/locally/<br> 
-
-After that, you're ready to install the dependencies for this repository:<br>
-
-5. `pip install lightning jupyterlab matplotlib tifffile scikit-learn scikit-image tensorboard`
+Alternatively, with [uv](https://docs.astral.sh/uv/), run `uv sync --extra notebooks` to create an environment from the lockfile.
 
 ### Data
-The tutorial notebook training.ipynb will download an example dataset and store it as a .tiff in `./data`.
+The tutorial notebook `examples/1-training.ipynb` will download an example dataset and store it as a .tiff in `data`.
 The data loader will try choose a library for loading images automatically.
-If your data is unsupported, edit `utils.get_imread_fn` to use a different function.
+If your data is unsupported, edit `get_imread_fn` in `src/cosdd/utils.py` to use a different function.
 The function should return images as a numpy array.
 
 ### Tutorial notebooks
-This repository contains three tutorial notebooks, 1-training.ipynb, 2-prediction.ipynb and 3-generation.ipynb. 
+The `examples` directory contains three tutorial notebooks, 1-training.ipynb, 2-prediction.ipynb and 3-generation.ipynb. 
 They will walk through training a model using an example dataset, using the trained model to denoise the example dataset, and using the trained model to generate entirely new images from nothing.
 
 ### Command line interface
 COSDD takes a long time to train. It is recommended to train it in the terminal, instead of the notebooks.
-Training and prediction configurations are set using .yaml files. An example training config file is `example-train-config.yaml` and an example prediction config file is `example-predict-config.yaml`. See below for options. 
+Training and prediction configurations are set using .yaml files. An example training config file is `examples/example-train-config.yaml` and an example prediction config file is `examples/example-predict-config.yaml`. See below for options. 
 
 To train, run:<br>
-`python training.py example-train-config.yaml`
+`cosdd-train example-train-config.yaml`
 
 After training, use the model to denoise by running:<br>
-`python prediction.py example-predict-config.yaml`<br>
-The prediction script will save results in a directory called denoised-\<date\>_\<time\>, with a file called denoised-\<i\>.tif for each input file.
+`cosdd-predict example-predict-config.yaml`<br>
+Trained models are saved in `./checkpoints/<model-name>` and `cosdd-predict` looks for them there.<br>
+The prediction command will save results in a directory called denoised-\<date\>_\<time\>, with a file called denoised-\<i\>.tif for each input file.
 
 ## Yaml training config file options
 
@@ -74,7 +75,7 @@ data:
 <details>
       <summary>patterns</summary>
 
-      (str) glob pattern to identify files within `paths` that will be used as training data. Current accepted file types are tiff/tif, czi & png. Edit get_imread_fn in utils.py to add data loading funtions for currently unsupported filetypes.
+      (str) glob pattern to identify files within `paths` that will be used as training data. Current accepted file types are tiff/tif, czi & png. Edit get_imread_fn in src/cosdd/utils.py to add data loading funtions for currently unsupported filetypes.
       
 </details>
 <details>
@@ -262,7 +263,7 @@ data:
 <details>
       <summary>patterns</summary>
 
-      (str) glob pattern to identify files within `paths` that will be used as prediction data. Current accepted file types are tiff/tif, czi & png. Edit get_imread_fn in utils.py to add data loading funtions for currently unsupported filetypes.
+      (str) glob pattern to identify files within `paths` that will be used as prediction data. Current accepted file types are tiff/tif, czi & png. Edit get_imread_fn in src/cosdd/utils.py to add data loading funtions for currently unsupported filetypes.
       
 </details>
 <details>
@@ -283,7 +284,7 @@ data:
       <summary>patch-size</summary>
 
       (list(int) | null) [(Depth), Height, Width]. Set to patch data into non-overlapping windows. Defualt: null.
-      Beware of patching data during prediction. The prediction.py script will automatically unpatch denoised images back to the original data shape, but this will result in boundary artefacts. 
+      Beware of patching data during prediction. The `cosdd-predict` command will automatically unpatch denoised images back to the original data shape, but this will result in boundary artefacts. 
       
 </details>
 <details>

@@ -1,0 +1,57 @@
+[project]
+name = "cosdd"
+version = "0.1.0"
+description = "Unsupervised denoising for signal-dependent and row-correlated imaging noise"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Benjamin Salmon", email = "benjamin.salmon@fht.org" },
+    { name = "Alexander Krull", email = "a.f.f.krull@bham.ac.uk" }
+]
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "joblib",
+    "matplotlib>=3.11.2",
+    "numpy",
+    "pytorch-lightning>=2.6.6",
+    "pyyaml",
+    "scikit-image>=0.26.0",
+    "scikit-learn>=1.9.1",
+    "tensorboard>=2.21.0",
+    "tifffile>=2026.10.15",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+notebooks = ["jupyterlab>=4.1.6"]
+czi = ["czifile"]
+raw = ["rawpy"]
+
+[project.scripts]
+cosdd-train = "cosdd.training:main"
+cosdd-predict = "cosdd.prediction:main"
+
+[project.urls]
+Repository = "https://github.com/krulllab/COSDD"
+Paper = "https://arxiv.org/abs/2310.07887"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
